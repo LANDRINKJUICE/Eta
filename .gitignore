@@ -34,3 +34,7 @@ google-services.json
 
 # 外部源码参考，仅供阅读，不参与当前仓库版本管理
 /reference/
+
+# 本地工作记录，不入库：交接记录与 AI 入口说明只留在本地磁盘
+/Eta交接记录.md
+/AGENTS.md
