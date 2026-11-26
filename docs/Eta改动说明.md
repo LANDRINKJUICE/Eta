@@ -1,4 +1,4 @@
-# Eta 改动 — Magpie 网关集成（做了什么、怎么实现）
+# Eta 改动说明
 
 本文件记录本 fork 相对上游 `Mangi-11/Eta` 的全部改动。上游同步时请保留本文件，
 新增改动继续追加在文末，不要覆盖历史记录。
@@ -240,7 +240,7 @@ git rebase upstream/main feat/magpie-gateway
 app/src/main/kotlin/io/github/mangi/eta/agent/terminal/linux/MagpieGatewayManager.kt
 app/src/main/res/drawable/ic_magpie.xml
 app/src/main/res/drawable-xxxhdpi/provider_logo_magpie.webp
-docs/Eta改动-Magpie网关集成.md
+docs/Eta改动说明.md
 ```
 
 修改：

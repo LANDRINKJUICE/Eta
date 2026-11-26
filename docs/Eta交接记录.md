@@ -1,4 +1,4 @@
-# Eta 改动 — Magpie 网关交接（进度、坑、下一步）
+# Eta 交接记录
 
 > 这份文件是给「下一个接手的人」看的，不是给用户看的说明书。
 > 目标：5 分钟内知道做了什么、在哪、为什么这么做、坑在哪、下一步做什么。
@@ -107,7 +107,7 @@ agent/terminal/linux/MagpieGatewayManager.kt   启停、就绪探测、面板密
 .github/workflows/magpie-build.yml             只对 feat/** 触发，出双包
 res/drawable/ic_magpie.xml                     菜单单色图标
 res/drawable-xxxhdpi/provider_logo_magpie.webp Provider 彩色图标
-docs/Eta改动-Magpie网关集成.md                     详细设计与实现
+docs/Eta改动说明.md                     详细设计与实现
 ```
 
 ### 修改（都是加行，只删过 1 行）
@@ -208,4 +208,4 @@ curl -sL -H "Authorization: Bearer $TOKEN" \
 - 只下载 release 包，debug 基本不装
 - Magpie 会自更新，版本号不用纠结
 
-详细设计见仓库内 `docs/Eta改动-Magpie网关集成.md`。
+详细设计见仓库内 `docs/Eta改动说明.md`。
