@@ -248,25 +248,45 @@ docs/Eta改动说明.md
 ```
 agent/model/provider/ProviderReasoning.kt          +1   when 分支
 agent/terminal/linux/AlpineEnvironmentPaths.kt     +2   标记与修订号
-agent/terminal/linux/LinuxPackageProfiles.kt      +23   MAGPIE profile（-1 为 ALL 列表重写）
+agent/terminal/linux/LinuxPackageProfiles.kt    +23 -1 MAGPIE profile（ALL 列表重写）
 agent/terminal/linux/PinnedLinuxToolInstaller.kt  +87   枚举、制品、激活
 data/datastore/SettingsDataStore.kt               +30   面板密钥、首次确认
 data/model/Provider.kt                             +1   MAGPIE 源类型
 data/provider/BuiltinProviders.kt                 +10   内置 Provider
 data/provider/ProviderSourceRegistry.kt            +2   注册与映射
-ui/app/AgentAppRoot.kt                            +95   状态、动作、确认框
-ui/app/AgentAppShell.kt                           +52   菜单项与参数链
+ui/app/AgentAppRoot.kt                         +123 -1 状态、动作、确认框、生命周期
+ui/app/AgentAppShell.kt                         +39 -1 菜单项与参数链
 ui/components/ProviderBranding.kt                  +1   品牌图标
-ui/screens/terminal/LinuxEnvironmentScreen.kt     +15   工具项与标记清理
-res/values*/strings.xml                         +12×3   三语文案
+ui/screens/terminal/LinuxEnvironmentScreen.kt    +106   工具项、启停卸载按钮、确认框
+res/values*/strings.xml                         +14×3   三语文案
 ```
 
-新增文件行数：`MagpieGatewayManager.kt` 151、`magpie-build.yml` 98、
-`ic_magpie.xml` 17、`provider_logo_magpie.webp` 1372 字节。
+新增文件行数：`MagpieGatewayManager.kt` 185、`magpie-build.yml` 98、
+`ic_magpie.xml` 17、`provider_logo_magpie.webp` 1638 字节。
 
 ---
 
 ## 11. 变更记录
+
+### 2026-11-26 四版：可用性修复与惯例对齐
+
+真机验证后补的修复：
+
+1. **启动阻塞主线程**：`supervisor.start()` 内部 `ProcessBuilder + waitFor` 最长 10 秒，
+   包进 `withContext(Dispatchers.IO)`。
+2. **backend 切换后路径失效**：`linuxRootfsPath` 构造时固化，chroot↔PRoot 切换后指向旧
+   rootfs。改用 `linuxRootfsPathProvider`，每次调用动态求值。
+3. **装完菜单不出现**：路由切换不触发 `ON_RESUME`，在 `snapshotFlow { backStack }` 里
+   监听回到 Home 时刷新。
+4. **按钮永久变灰**：停止与卸载的协程缺 `try/finally`，异常时 `magpieBusy` 不释放。
+5. **对话框无毛玻璃**：`GlassDialog` 漏传 `backdrop`，项目其余 36 处调用都传了。
+6. **日志风格**：`Magpie gateway action=...` 改为 `Magpie action=...`，
+   对齐 `<名词短语> action=<动词>` 惯例。
+7. **首次确认不弹**：装完清磁盘标记但内存状态未同步，标记读取并入 `refreshMagpieState()`。
+8. **缺 `LaunchedEffect` 导入**：该文件此前从未用过，新增时漏了。
+
+第 8 条暴露了检查盲区：静态检查能查「多余」查不了「缺失」。
+交接记录里补了对应检查脚本。
 
 ### 2026-11-26 三版：菜单收敛与启停入口调整
 

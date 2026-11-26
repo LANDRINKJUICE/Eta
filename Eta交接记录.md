@@ -9,9 +9,12 @@
 
 ## 一句话状态
 
-Magpie 网关已集成进 Eta fork，代码完成并推送，CI 构建通过（run `45777063819`，提交 `ea775ad`）。
-**第二轮验证**：三处启动根因已修（详见 `docs/Eta改动说明.md` 二版）。
-待真机验证：面板能否打开、两个图标是否正常。
+Magpie 网关已集成进 Eta fork，**真机验证通过，功能可用**。
+最新构建：run `45801723768`，提交 `0006aaf`，APK 在
+`/storage/emulated/0/Download/ETA共享文件夹/APK/Eta-Magpie-v4.0.0+0006aaf-release.apk`。
+
+同时完成了另一件事：把 AI Gateway 导出的 31 个账号按提供商分类，
+输出到 `/storage/emulated/0/Download/ETA共享文件夹/凭据分类/`。
 
 ---
 
@@ -24,7 +27,11 @@ Magpie 网关已集成进 Eta fork，代码完成并推送，CI 构建通过（r
 | fork | `git@github.com:LANDRINKJUICE/Eta.git`（推送目标） |
 | 分支 | `feat/magpie-gateway` |
 | 基线 | `26e9835`（上游 4.0.0） |
-| 关键提交 | `e80065e` 修编译错误 / `ea775ad` 修功能缺陷 / `180d3fc` 加文档 |
+| 最新提交 | `0006aaf` |
+
+提交脉络：
+`e80065e` 修编译错误 → `ea775ad` 修功能缺陷 → `180d3fc`/`eed700f` 文档
+→ `d25c608`/`b9cbf35` 菜单收敛 → `0006aaf` 补导入
 
 其他参考仓库（只读，不改）：
 - `/workspace/02-项目projects/magpie` — Magpie 源码，稀疏克隆（只有 `internal/` 和 `cmd/`）
@@ -37,12 +44,16 @@ Magpie 网关已集成进 Eta fork，代码完成并推送，CI 构建通过（r
 把 Magpie（本地 LLM 网关）作为可选组件接进 Eta：
 
 1. **安装**：Linux 工具环境页多一个「Magpie 网关」条目，用户点了才下载（96 MB）
-2. **启动**：会话页菜单「打开 Magpie」，首次确认后启动，之后直接启动
-3. **打开**：用系统默认浏览器打开面板（不搬 WebView）
-4. **关闭**：运行中才显示，点击需二次确认
-5. **Provider**：模型提供商列表内置 `Magpie` 一项，指向本机网关
+2. **启动/打开**：会话页菜单只有「打开 Magpie」一项，未运行先启动再开面板
+3. **停止/卸载**：在 Linux 工具页的 Magpie 行，运行时显示「停止」，已装显示「卸载」（带确认）
+4. **Provider**：模型提供商列表内置 `Magpie` 一项，指向本机网关 3425
 
 不改 Magpie 源码，不打包进 APK，不做独立容器。
+
+### 最终交互设计（几轮迭代后的结论）
+
+菜单只放「打开 Magpie」，**不放关闭**——因为关闭项会占位置，且运行时会顶掉打开入口。
+启停归到 Linux 工具页，与「安装」在同一处，符合心智。
 
 ---
 
@@ -111,23 +122,25 @@ res/drawable-xxxhdpi/provider_logo_magpie.webp Provider 彩色图标
 docs/Eta改动说明.md                     详细设计与实现
 ```
 
-### 修改（都是加行，只删过 1 行）
+### 修改（相对基线 `26e9835` 的实际行数）
 
 ```
-PinnedLinuxToolInstaller.kt    +87   ManagedLinuxTool.MAGPIE + artifact + 两条激活路径
-LinuxPackageProfiles.kt        +23   MAGPIE profile（ALL 列表那行重写，-1）
-AlpineEnvironmentPaths.kt       +2   marker + revision
-SettingsDataStore.kt           +30   magpiePanelKey / magpieFirstRunConfirmed
-Provider.kt                     +1   ProviderSourceTypes.MAGPIE
-BuiltinProviders.kt            +10   内置 Provider（sortOrder 12）
-ProviderSourceRegistry.kt       +2   knownSourceTypes + ID 映射（**漏了会归一化成 CUSTOM**）
-ProviderReasoning.kt            +1   穷尽式 when 补分支（**漏了编译不过**）
-AgentAppRoot.kt                +95   状态、动作 effect、确认框
-AgentAppShell.kt               +52   菜单项 + 四层参数传递
-ProviderBranding.kt             +1   图标映射
-LinuxEnvironmentScreen.kt      +15   InstallTarget.MAGPIE + 重装清标记
-strings.xml ×3                 +12   三语文案
+PinnedLinuxToolInstaller.kt    +87    ManagedLinuxTool.MAGPIE + artifact + 两条激活路径
+LinuxPackageProfiles.kt        +23 -1 MAGPIE profile（ALL 列表那行重写）
+AlpineEnvironmentPaths.kt       +2    marker + revision
+SettingsDataStore.kt           +30    magpiePanelKey / magpieFirstRunConfirmed
+Provider.kt                     +1    ProviderSourceTypes.MAGPIE
+BuiltinProviders.kt            +10    内置 Provider（sortOrder 12）
+ProviderSourceRegistry.kt       +2    knownSourceTypes + ID 映射（**漏了会归一化成 CUSTOM**）
+ProviderReasoning.kt            +1    穷尽式 when 补分支（**漏了编译不过**）
+AgentAppRoot.kt               +123 -1 状态、动作、确认框、生命周期监听
+AgentAppShell.kt               +39 -1 菜单项 + 四层参数传递 + 展开前刷新
+ProviderBranding.kt             +1    图标映射
+LinuxEnvironmentScreen.kt     +106    InstallTarget.MAGPIE + 启停卸载按钮 + 确认框
+strings.xml ×3                 +14×3  三语文案
 ```
+
+新增文件行数：`MagpieGatewayManager.kt` 185、`magpie-build.yml` 98、`ic_magpie.xml` 17。
 
 ---
 
@@ -144,6 +157,44 @@ strings.xml ×3                 +12   三语文案
 | 5 | 位置错 | 放在「打开浏览器」后面 | 移到「打开终端」后面 |
 | 6 | 图标小 | potrace 坐标未重算 viewport | viewport 108.46 |
 | 7 | 图标风格错 | Provider 用了单色矢量 | 换原生彩色 webp |
+| 8 | 启动卡界面 | `supervisor.start()` 内部 `ProcessBuilder + waitFor` 阻塞主线程最长 10s | 包进 `withContext(Dispatchers.IO)` |
+| 9 | 换 backend 后失效 | `linuxRootfsPath` 构造时固化，chroot↔PRoot 切换后指向旧路径 | 改用 `linuxRootfsPathProvider` 动态取值 |
+| 10 | 装完菜单不出现 | 路由切换不触发 `ON_RESUME` | 监听 `snapshotFlow { backStack }`，回 Home 时刷新 |
+| 11 | 按钮永久变灰 | 停止/卸载的协程缺 `try/finally`，异常时 `busy` 不释放 | 两处都加 `finally` |
+| 12 | 对话框无毛玻璃 | `GlassDialog` 漏传 `backdrop`（全项目 36 处都传了） | 补 `currentGlassOverlayBackdrop()` |
+| 13 | 日志风格不一致 | 写成 `Magpie gateway action=...` | 改为 `Magpie action=...`，对齐 `<名词> action=<动词>` |
+| 14 | 首次确认不弹 | 装完清了磁盘标记但内存状态没同步 | 标记读取并入 `refreshMagpieState()` |
+| 15 | **编译失败** | `LinuxEnvironmentScreen` 新增 `LaunchedEffect` 但漏导入（该文件此前从未用过它） | 补 `import androidx.compose.runtime.LaunchedEffect` |
+
+### 从坑里总结的检查清单
+
+静态检查能发现「多余」，发现不了「缺失」。第 15 个坑就是这么漏的——括号平衡、
+死代码扫描、未使用导入检查全部通过，但缺导入照样编译失败。
+
+提交前至少跑这几项：
+
+```sh
+# 1. 括号平衡
+# 2. XML / YAML 合法
+# 3. 未使用导入（查多余）
+# 4. 新增 API 是否有对应导入（查缺失）← 第 15 个坑的教训
+# 5. 新增调用是否与项目其余调用参数一致（查惯例）← 第 12 个坑的教训
+```
+
+第 4 项可以这样查：
+
+```sh
+for f in $(git diff --name-only <baseline> | grep '\.kt$'); do
+  for api in LaunchedEffect DisposableEffect remember mutableStateOf stringResource \
+             vectorResource ImageVector PaddingValues collectAsStateWithLifecycle; do
+    used=$(grep -c "\b$api\b" "$f")
+    imported=$(grep -c "import .*\.$api$" "$f")
+    [ "$used" -gt 0 ] && [ "$imported" -eq 0 ] && echo "缺导入: $f -> $api"
+  done
+done
+```
+
+第 5 项：改动 UI 组件调用前，先 `grep` 全项目同名调用，对比参数列表。
 
 ---
 
@@ -191,12 +242,67 @@ curl -sL -H "Authorization: Bearer $TOKEN" \
 
 ## 下一步（如果继续做）
 
-1. **真机验证**（未做）：装 APK → Linux 页装 Magpie → 菜单打开 → 面板能否进
-2. **未验证的风险点**：
-   - Magpie 自更新后二进制路径是否变化（若变化，`magpiePath()` 会失效）
+1. **真机验证**：已完成，用户确认可用。
+2. **仍未验证的风险点**：
    - 3430 被占用时的表现（当前是就绪超时，无明确提示）
    - 首次下载 96 MB 的断点续传（`VerifiedArtifactDownloader` 是否支持）
-3. **待办**：文档提交 `180d3fc` 尚未推送
+   - 切换 chroot↔PRoot 后启停是否真的正常（代码已按 provider 动态取值，未实测）
+
+已排除：Magpie **确实会自更新**，`last-version` 在 18:41 更新，二进制从
+96,141,474（v0.1.4827）变为 96,207,010（v0.1.4834），路径未变，`magpiePath()` 不受影响。
+
+3. **可选的后续**：把 raccoon 的 7 个账号导入 Magpie（见下节）。
+
+---
+
+## Magpie 数据目录
+
+```
+/data/data/io.github.mangi.eta/files/terminal/debian/rootfs/root/.config/magpie/
+（Linux 侧即 /root/.config/magpie）
+```
+
+| 文件 | 作用 |
+|---|---|
+| `providers.json` | 模型服务商配置（含密钥），当前有 trae-cn / trae-global |
+| `logins.json` | 各订阅账号登录态 |
+| `settings.json` / `gateway.json` | 网关设置与状态 |
+| `quotas.json` / `quota-history.json` | 配额 |
+| `usage.jsonl` | 用量流水（持续增长，已 87 KB） |
+| `plugins/`、`plugins.json` | 已装插件 |
+| `plugin-providers.json`、`plugin-auth.json` | 插件提供的服务商与授权 |
+
+**已装插件**：`@magpie-community/opencode-trae-auth`、`@magpie-community/opencode-raccoon-auth`
+
+**卸载不清这个目录**：`uninstall()` 只删二进制和完成标记，配置保留，重装即恢复。
+
+---
+
+## 凭据分类（另一件事）
+
+用户提供了 `ai-gateway-accounts_1.json`（AI Gateway 导出格式，31 个账号），
+已按提供商拆分到：
+
+```
+/storage/emulated/0/Download/ETA共享文件夹/凭据分类/
+├── _索引.json                    汇总（不含凭据）
+├── raccoon-商汤小浣熊.json        7 个
+├── codebuddy-腾讯CodeBuddy.json   9 个
+├── loomy-Loomy.json              7 个
+└── trae-Trae.json                8 个
+```
+
+四个提供商的 secret 字段结构不同：raccoon 有 `accessToken`/`refreshToken`/`expiresAt`，
+codebuddy 多 `domain`/`enterpriseId`，loomy 用 `session`，trae 是 `auth`/`account`。
+
+**raccoon 已实测可用**：`GET https://xiaohuanxiong.com/api/web/points/v1/balance`
+带 `Authorization: Bearer <accessToken>` 返回 200，7 个 token 都在有效期。
+
+**怎么导入 Magpie**：raccoon 插件已装，但未声明 `importFrom`，
+所以 `magpie accounts import raccoon` 不可用。只能走面板的「手动 Token」入口，
+粘贴 `{"accessToken":"...","refreshToken":"..."}`。7 个账号需粘 7 次。
+
+raccoon 是 OpenAI 兼容接口：`/api/web/llm/v2/chat/completions`。
 
 ---
 
@@ -210,5 +316,6 @@ curl -sL -H "Authorization: Bearer $TOKEN" \
 - 打开 Magpie 走系统默认浏览器，不搬 WebView
 - 只下载 release 包，debug 基本不装
 - Magpie 会自更新，版本号不用纠结
+- **UI 改动要对照项目既有调用惯例**（参数、日志格式），不凭感觉写
 
 详细设计见仓库内 `docs/Eta改动说明.md`。
