@@ -1,5 +1,12 @@
 # Eta
 
+> **⚠️ 这是 fork，改动前先读交接记录**
+>
+> - [`Eta交接记录.md`](Eta交接记录.md) — 当前进度、已踩的坑、环境备忘、下一步
+> - [`docs/Eta改动说明.md`](docs/Eta改动说明.md) — 相对上游的全部改动与实现细节
+>
+> 上游为 `Mangi-11/Eta`。新增改动请继续追加到这两份文件，不要覆盖历史。
+
 **简体中文** | [English](README_EN.md)
 
 [![GitHub Stars](https://img.shields.io/github/stars/Mangi-11/Eta?logo=github&label=Stars&color=1677FF)](https://github.com/Mangi-11/Eta/stargazers)
