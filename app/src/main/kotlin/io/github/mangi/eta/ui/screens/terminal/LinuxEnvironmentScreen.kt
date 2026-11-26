@@ -35,6 +35,7 @@ import io.github.mangi.eta.agent.terminal.LinuxExecutionBackend
 import io.github.mangi.eta.agent.terminal.linux.LinuxPackageProfile
 import io.github.mangi.eta.agent.terminal.linux.LinuxPackageProfileInstaller
 import io.github.mangi.eta.agent.terminal.linux.LinuxPackageProfiles
+import io.github.mangi.eta.agent.terminal.linux.MagpieGatewayManager
 import io.github.mangi.eta.agent.terminal.linux.PackageProfileInstallProgress
 import io.github.mangi.eta.agent.terminal.linux.PackageProfileInstallResult
 import io.github.mangi.eta.agent.terminal.linux.PackageProfileInstallStage
@@ -144,6 +145,15 @@ internal fun LinuxEnvironmentScreen(
     }
     var status by remember(installer) { mutableStateOf(installer.status()) }
     var debianStatus by remember(debianInstaller) { mutableStateOf(debianInstaller.status()) }
+    // Magpie 的启停与卸载只在本页操作，状态在这里单独跟踪。
+    val magpieManager = remember(appContext, selectedDistribution) {
+        MagpieGatewayManager(appContext, selectedDistribution)
+    }
+    var magpieRunning by remember { mutableStateOf(false) }
+    var magpieBusy by remember { mutableStateOf(false) }
+    LaunchedEffect(magpieManager) {
+        magpieRunning = magpieManager.running() || magpieManager.reachable()
+    }
     var busyTarget by remember { mutableStateOf<InstallTarget?>(null) }
     var progress by remember { mutableStateOf<AlpineInstallProgress?>(null) }
     var debianProgress by remember { mutableStateOf<DebianInstallProgress?>(null) }
@@ -411,6 +421,50 @@ internal fun LinuxEnvironmentScreen(
                             title = rowTitle,
                             summary = rowSummary,
                             endActions = {
+                                // Magpie 已安装时额外提供停止与卸载；其余工具保持原样。
+                                if (profileUi.target == InstallTarget.MAGPIE && ready) {
+                                    if (magpieRunning) {
+                                        TextButton(
+                                            text = stringResource(R.string.magpie_stop),
+                                            enabled = !magpieBusy,
+                                            minWidth = 0.dp,
+                                            minHeight = 32.dp,
+                                            insideMargin = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            onClick = {
+                                                if (!magpieBusy) {
+                                                    magpieBusy = true
+                                                    coroutineScope.launch {
+                                                        magpieManager.stop()
+                                                        magpieRunning = magpieManager.running() || magpieManager.reachable()
+                                                        magpieBusy = false
+                                                    }
+                                                }
+                                            },
+                                        )
+                                    }
+                                    TextButton(
+                                        text = stringResource(R.string.magpie_uninstall),
+                                        enabled = !magpieBusy,
+                                        minWidth = 0.dp,
+                                        minHeight = 32.dp,
+                                        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        onClick = {
+                                            if (!magpieBusy) {
+                                                magpieBusy = true
+                                                coroutineScope.launch {
+                                                    val removed = magpieManager.uninstall()
+                                                    magpieRunning = magpieManager.running() || magpieManager.reachable()
+                                                    profileReady = profileReady +
+                                                        (InstallTarget.MAGPIE to profileInstallers.getValue(InstallTarget.MAGPIE).isReady())
+                                                    resultMessage = context.getString(
+                                                        if (removed) R.string.magpie_uninstalled else R.string.magpie_uninstall_failed,
+                                                    )
+                                                    magpieBusy = false
+                                                }
+                                            }
+                                        },
+                                    )
+                                }
                                 TextButton(
                                     text = primaryText,
                                     enabled = primaryEnabled,

@@ -59,14 +59,14 @@
   <string name="action_open_terminal">Open terminal</string>
   <string name="action_open_browser">Open browser</string>
   <string name="action_open_magpie">Open Magpie</string>
-  <string name="action_close_magpie">Close Magpie</string>
   <string name="magpie_run_confirm_title">Run the Magpie gateway?</string>
   <string name="magpie_run_confirm_message">Magpie will run in the background inside Linux on 127.0.0.1:3425, and stays running until you close it.</string>
-  <string name="magpie_close_confirm_title">Stop the Magpie gateway?</string>
-  <string name="magpie_close_confirm_message">Models served through Magpie stop working until you start it again.</string>
   <string name="magpie_run">Run</string>
   <string name="magpie_stop">Stop</string>
   <string name="magpie_not_running">Magpie did not start. Check the Linux environment and try again.</string>
+  <string name="magpie_uninstall">Uninstall</string>
+  <string name="magpie_uninstalled">Magpie uninstalled</string>
+  <string name="magpie_uninstall_failed">Failed to uninstall Magpie</string>
   <string name="route_tools">Tools</string>
   <string name="route_skills" translatable="false">Skills</string>
   <string name="route_permissions">Permissions</string>

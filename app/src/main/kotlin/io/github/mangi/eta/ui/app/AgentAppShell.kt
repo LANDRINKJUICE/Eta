@@ -105,9 +105,8 @@ internal fun AgentAppShell(
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
     magpieInstalled: Boolean,
-    magpieRunning: Boolean,
     onOpenMagpie: () -> Unit,
-    onCloseMagpie: () -> Unit,
+    onRefreshMagpieState: () -> Unit,
     onSelectConversation: (String) -> Unit,
     onConversationTogglePin: (ConversationSummaryUi) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
@@ -152,9 +151,8 @@ internal fun AgentAppShell(
                         onOpenTerminal = onOpenTerminal,
                         onOpenBrowser = onOpenBrowser,
                         magpieInstalled = magpieInstalled,
-                        magpieRunning = magpieRunning,
                         onOpenMagpie = onOpenMagpie,
-                        onCloseMagpie = onCloseMagpie,
+                        onRefreshMagpieState = onRefreshMagpieState,
                         homeTitle = homeTitle,
                         homeCharacter = homeCharacter,
                         homeModelPickerState = homeModelPickerState,
@@ -236,9 +234,8 @@ private fun AgentTopBar(
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
     magpieInstalled: Boolean,
-    magpieRunning: Boolean,
     onOpenMagpie: () -> Unit,
-    onCloseMagpie: () -> Unit,
+    onRefreshMagpieState: () -> Unit,
     homeTitle: String?,
     homeCharacter: RoleplayChatUi?,
     homeModelPickerState: AgentModelPickerUiState?,
@@ -256,9 +253,8 @@ private fun AgentTopBar(
             onOpenTerminal = onOpenTerminal,
             onOpenBrowser = onOpenBrowser,
             magpieInstalled = magpieInstalled,
-            magpieRunning = magpieRunning,
             onOpenMagpie = onOpenMagpie,
-            onCloseMagpie = onCloseMagpie,
+            onRefreshMagpieState = onRefreshMagpieState,
         ) {
             AgentTopBarChatHeader(
                 conversationTitle = homeTitle,
@@ -291,9 +287,8 @@ private fun HomeTopBar(
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
     magpieInstalled: Boolean,
-    magpieRunning: Boolean,
     onOpenMagpie: () -> Unit,
-    onCloseMagpie: () -> Unit,
+    onRefreshMagpieState: () -> Unit,
     centerContent: @Composable () -> Unit,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
@@ -363,9 +358,8 @@ private fun HomeTopBar(
                 onOpenTerminal = onOpenTerminal,
                 onOpenBrowser = onOpenBrowser,
                 magpieInstalled = magpieInstalled,
-                magpieRunning = magpieRunning,
                 onOpenMagpie = onOpenMagpie,
-                onCloseMagpie = onCloseMagpie,
+                onRefreshMagpieState = onRefreshMagpieState,
             )
         }
     }
@@ -379,9 +373,8 @@ private fun TopBarOverflowMenu(
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
     magpieInstalled: Boolean,
-    magpieRunning: Boolean,
     onOpenMagpie: () -> Unit,
-    onCloseMagpie: () -> Unit,
+    onRefreshMagpieState: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     LaunchedEffect(isCurrentRoute) {
@@ -396,14 +389,17 @@ private fun TopBarOverflowMenu(
     val openTerminalText = stringResource(R.string.action_open_terminal)
     val openBrowserText = stringResource(R.string.action_open_browser)
     val openMagpieText = stringResource(R.string.action_open_magpie)
-    val closeMagpieText = stringResource(R.string.action_close_magpie)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
     )
     val overlayBackdrop = currentGlassOverlayBackdrop() ?: backdrop
 
     GlassIconButton(
-        onClick = { showMenu = true },
+        onClick = {
+            // 每次展开都重新探测：安装完成、进程意外退出或手动停掉后，菜单要立刻反映真实状态。
+            onRefreshMagpieState()
+            showMenu = true
+        },
         backdrop = backdrop,
         modifier = Modifier.glassPopupAnchor(
             anchor = moreAnchor,
@@ -460,16 +456,6 @@ private fun TopBarOverflowMenu(
                         onClick = {
                             showMenu = false
                             onOpenMagpie()
-                        },
-                    )
-                }
-                if (magpieInstalled && magpieRunning) {
-                    GlassPopupItem(
-                        text = closeMagpieText,
-                        icon = ImageVector.vectorResource(R.drawable.ic_magpie),
-                        onClick = {
-                            showMenu = false
-                            onCloseMagpie()
                         },
                     )
                 }

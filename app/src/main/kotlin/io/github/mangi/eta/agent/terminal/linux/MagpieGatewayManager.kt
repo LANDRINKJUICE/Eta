@@ -145,6 +145,28 @@ internal class MagpieGatewayManager(
         stopped
     }
 
+    /**
+     * 卸载网关：先停进程，再删二进制与完成标记，最后清掉首次运行授权。
+     * 配置目录保留，重装后 provider 设置不用重配。
+     */
+    suspend fun uninstall(): Boolean = withContext(Dispatchers.IO) {
+        stop()
+        val rootfs = File(rootfsPath())
+        val targets = listOf(
+            File(rootfs, "usr/local/bin/magpie"),
+            File(rootfs, "opt/eta/magpie"),
+            File(rootfs, LinuxPackageProfiles.MAGPIE.markerName),
+        )
+        val removed = targets.all { file ->
+            !file.exists() || file.delete()
+        }
+        SettingsDataStore.setMagpieFirstRunConfirmed(false)
+        AndroidAgentLogger.info(
+            "Magpie gateway action=uninstall outcome=${if (removed) "succeeded" else "failed"}",
+        )
+        removed
+    }
+
     companion object {
         private const val GATEWAY_HOST = "127.0.0.1"
 

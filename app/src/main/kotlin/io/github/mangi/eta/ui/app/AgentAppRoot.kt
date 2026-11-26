@@ -208,7 +208,6 @@ fun AgentAppRoot(
     var messageDeleteTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
     var messageRegenerateTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
     var magpieInstalled by remember { mutableStateOf(false) }
-    var magpieRunning by remember { mutableStateOf(false) }
     var magpiePendingAction by remember { mutableStateOf<MagpiePendingAction?>(null) }
     var magpieBusy by remember { mutableStateOf(false) }
     val conversationExportLauncher = rememberLauncherForActivityResult(
@@ -260,12 +259,30 @@ fun AgentAppRoot(
     }
     // 菜单项以 magpieInstalled 为准：它由下面的探测填充，未就绪时天然不显示。
     var magpieFirstRunConfirmed by remember { mutableStateOf(false) }
-    LaunchedEffect(magpieManager) {
+
+    /** 探测一次安装与运行状态。菜单展开、安装完成、启动停止后都走这里。 */
+    suspend fun refreshMagpieState() {
         val installed = magpieManager.installed()
         magpieInstalled = installed
         // 记录里存活，或端口已可用，都算运行中；后者覆盖进程被意外重启的情况。
-        magpieRunning = installed && (magpieManager.running() || magpieManager.reachable())
+        // 安装完成会清掉授权标记，这里一并同步，避免内存与磁盘不一致。
         magpieFirstRunConfirmed = SettingsDataStore.magpieFirstRunConfirmed()
+    }
+
+    LaunchedEffect(magpieManager) {
+        refreshMagpieState()
+    }
+
+    // 装完 Magpie 后回到会话页要立刻看到菜单项：随 Activity 回到前台重新探测。
+    val magpieLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(magpieLifecycleOwner, magpieManager) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                uiScope.launch { refreshMagpieState() }
+            }
+        }
+        magpieLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { magpieLifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(requestedConversationId) {
@@ -364,7 +381,6 @@ fun AgentAppRoot(
                     magpieInstalled = installed
                     if (!installed) return@launch
                     val ready = magpieManager.start()
-                    magpieRunning = ready
                     if (ready) {
                         try {
                             context.startActivity(
@@ -374,6 +390,8 @@ fun AgentAppRoot(
                             Toast.makeText(context, R.string.provider_i18n_no_browser, Toast.LENGTH_SHORT).show()
                         }
                     } else {
+                        // 启动失败：按真实状态回写，避免菜单停留在错误的「运行中」。
+                        refreshMagpieState()
                         Toast.makeText(context, R.string.magpie_not_running, Toast.LENGTH_SHORT).show()
                     }
                 } finally {
@@ -407,7 +425,6 @@ fun AgentAppRoot(
             onOpenTerminal = { pushRoute(AppRoute.Terminal) },
             onOpenBrowser = { openConversationBrowser() },
             magpieInstalled = magpieInstalled,
-            magpieRunning = magpieRunning,
             onOpenMagpie = {
                 if (magpieFirstRunConfirmed) {
                     openMagpieGateway()
@@ -415,7 +432,11 @@ fun AgentAppRoot(
                     magpiePendingAction = MagpiePendingAction.ConfirmFirstRun
                 }
             },
-            onCloseMagpie = { if (!magpieBusy) magpiePendingAction = MagpiePendingAction.ConfirmStop },
+            onRefreshMagpieState = {
+                if (!magpieBusy) {
+                    uiScope.launch { refreshMagpieState() }
+                }
+            },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
             onConversationTogglePin = { conversation ->
                 agentState.toggleConversationPin(conversation.id)
@@ -1064,39 +1085,24 @@ fun AgentAppRoot(
     }
 
     val magpieConfirmFirstRun = magpiePendingAction == MagpiePendingAction.ConfirmFirstRun
-    val magpieConfirmStop = magpiePendingAction == MagpiePendingAction.ConfirmStop
     GlassDialog(
-        show = magpieConfirmFirstRun || magpieConfirmStop,
+        show = magpieConfirmFirstRun,
         backdrop = sceneBackdrop,
-        title = stringResource(
-            if (magpieConfirmStop) R.string.magpie_close_confirm_title else R.string.magpie_run_confirm_title,
-        ),
-        summary = stringResource(
-            if (magpieConfirmStop) R.string.magpie_close_confirm_message else R.string.magpie_run_confirm_message,
-        ),
+        title = stringResource(R.string.magpie_run_confirm_title),
+        summary = stringResource(R.string.magpie_run_confirm_message),
         onDismissRequest = { magpiePendingAction = null },
     ) {
         DialogActions(
-            confirmText = stringResource(if (magpieConfirmStop) R.string.magpie_stop else R.string.magpie_run),
-            destructive = magpieConfirmStop,
+            confirmText = stringResource(R.string.magpie_run),
             onCancel = { magpiePendingAction = null },
             onConfirm = {
-                val stopping = magpieConfirmStop
                 magpiePendingAction = null
-                if (stopping) {
-                    uiScope.launch {
-                        magpieManager.stop()
-                        // 以实际状态为准：端口可能仍被别的实例占用。
-                        magpieRunning = magpieManager.running() || magpieManager.reachable()
-                    }
-                } else {
-                    // 首次放行：记下授权，然后直接启动，不再走状态位触发。
-                    uiScope.launch {
-                        SettingsDataStore.setMagpieFirstRunConfirmed(true)
-                        magpieFirstRunConfirmed = true
-                    }
-                    openMagpieGateway()
+                // 首次放行：记下授权，然后直接启动，不再走状态位触发。
+                uiScope.launch {
+                    SettingsDataStore.setMagpieFirstRunConfirmed(true)
+                    magpieFirstRunConfirmed = true
                 }
+                openMagpieGateway()
             },
         )
     }
@@ -1177,12 +1183,9 @@ private val CorePermissionAttentionIds = setOf(
     "notifications",
 )
 
-/**
- * Magpie 网关的待确认动作。确认后直接调用 openMagpieGateway，不再经过状态位。
- */
+/** Magpie 首次运行的待确认状态。确认后直接调用 openMagpieGateway。 */
 private enum class MagpiePendingAction {
     ConfirmFirstRun,
-    ConfirmStop,
 }
 
 private data class MessageMutationTarget(

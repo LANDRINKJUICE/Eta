@@ -60,14 +60,14 @@
   <string name="action_open_terminal">開啟終端機</string>
   <string name="action_open_browser">開啟瀏覽器</string>
   <string name="action_open_magpie">開啟 Magpie</string>
-  <string name="action_close_magpie">關閉 Magpie</string>
   <string name="magpie_run_confirm_title">執行 Magpie 閘道？</string>
   <string name="magpie_run_confirm_message">Magpie 將在 Linux 環境的背景執行，監聽 127.0.0.1:3425，直到你主動關閉它。</string>
-  <string name="magpie_close_confirm_title">停止 Magpie 閘道？</string>
-  <string name="magpie_close_confirm_message">停止後，經 Magpie 提供的模型將立即無法使用，直到你再次啟動。</string>
   <string name="magpie_run">執行</string>
   <string name="magpie_stop">停止</string>
   <string name="magpie_not_running">Magpie 未能啟動，請檢查 Linux 環境後重試。</string>
+  <string name="magpie_uninstall">解除安裝</string>
+  <string name="magpie_uninstalled">已解除安裝 Magpie</string>
+  <string name="magpie_uninstall_failed">解除安裝 Magpie 失敗</string>
   <string name="route_tools">工具</string>
   <string name="route_permissions">權限</string>
   <string name="route_system_enhancements">系統增強</string>
