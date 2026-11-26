@@ -36,12 +36,13 @@ internal class MagpieGatewayManager(
     private fun rootfsPath(): String =
         LinuxEnvironmentPaths.rootfsDir(appContext, distribution).absolutePath
 
-    // 与 AgentLocalTools 一致：必须给出 linuxRootfsPath，否则 supervisor 取不到 rootfs，
+    // 与 AgentLocalTools 一致：必须给出 rootfs，否则 supervisor 取不到路径，
     // 直接返回「Linux rootfs 未配置」，进程不会被拉起。
+    // 用 provider 而非固定值：发行版或 backend 变化后 rootfs 会换，supervisor 需跟着取新值。
     private val supervisor = DetachedTaskSupervisor(
         logger = AndroidAgentLogger,
         recordsFile = DetachedTaskSupervisor.defaultRecordsFile(appContext),
-        linuxRootfsPath = rootfsPath(),
+        linuxRootfsPathProvider = { rootfsPath() },
         linuxSharedMountsProvider = { SharedFolderMounts.current() },
     )
 
@@ -109,6 +110,7 @@ internal class MagpieGatewayManager(
 
     /** 启动网关；已可用时直接返回 true。就绪等待失败会回收残留任务。 */
     suspend fun start(): Boolean {
+        // supervisor.start 内部用 ProcessBuilder + waitFor，最长阻塞 10 秒，必须离开主线程。
         val executable = withContext(Dispatchers.IO) { magpiePath() } ?: return false
         if (reachable()) return true
         if (running()) stop()
@@ -116,18 +118,19 @@ internal class MagpieGatewayManager(
         val identity = TerminalRuntime.defaultIdentity(environment, rootfsPath())
         val webKey = panelKey()
         // chroot 与 PRoot 都以 HOME=/root 进入 rootfs（见 ProotCommandBuilder 的 env 前缀）。
-        val result = supervisor.start(
-            command = "HOME=/root XDG_CONFIG_HOME=/root/.config MAGPIE_WEB_KEY=$webKey " +
-                "exec $executable serve --web=$PANEL_ADDR",
-            cwd = "/root",
-            identity = identity,
-            environment = environment,
-            commandTask = false,
-            description = TASK_DESCRIPTION,
-        )
-        val started = result is DaemonStartResult.Started
+        val started = withContext(Dispatchers.IO) {
+            supervisor.start(
+                command = "HOME=/root XDG_CONFIG_HOME=/root/.config MAGPIE_WEB_KEY=$webKey " +
+                    "exec $executable serve --web=$PANEL_ADDR",
+                cwd = "/root",
+                identity = identity,
+                environment = environment,
+                commandTask = false,
+                description = TASK_DESCRIPTION,
+            ) is DaemonStartResult.Started
+        }
         AndroidAgentLogger.info(
-            "Magpie gateway action=start outcome=${if (started) "submitted" else "failed"} identity=$identity",
+            "Magpie action=start outcome=${if (started) "submitted" else "failed"} identity=$identity",
         )
         if (!started) return false
         val ready = awaitReady(START_TIMEOUT_MS)
@@ -140,7 +143,7 @@ internal class MagpieGatewayManager(
         val task = gatewayTask() ?: return@withContext true
         val stopped = supervisor.stop(task.id)
         AndroidAgentLogger.info(
-            "Magpie gateway action=stop outcome=${if (stopped) "succeeded" else "failed"} id=${task.id}",
+            "Magpie action=stop outcome=${if (stopped) "succeeded" else "failed"} id=${task.id}",
         )
         stopped
     }
@@ -157,14 +160,13 @@ internal class MagpieGatewayManager(
             File(rootfs, "opt/eta/magpie"),
             File(rootfs, LinuxPackageProfiles.MAGPIE.markerName),
         )
-        val removed = targets.all { file ->
-            !file.exists() || file.delete()
-        }
+        // 逐个删除，不短路：某个文件删不掉时其余仍需清理，避免留下半个安装。
+        val failures = targets.count { file -> file.exists() && !file.delete() }
         SettingsDataStore.setMagpieFirstRunConfirmed(false)
         AndroidAgentLogger.info(
-            "Magpie gateway action=uninstall outcome=${if (removed) "succeeded" else "failed"}",
+            "Magpie action=uninstall outcome=${if (failures == 0) "succeeded" else "failed"} failures=$failures",
         )
-        removed
+        failures == 0
     }
 
     companion object {

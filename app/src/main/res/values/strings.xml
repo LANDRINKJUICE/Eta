@@ -67,6 +67,8 @@
   <string name="magpie_uninstall">Uninstall</string>
   <string name="magpie_uninstalled">Magpie uninstalled</string>
   <string name="magpie_uninstall_failed">Failed to uninstall Magpie</string>
+  <string name="magpie_uninstall_confirm_title">Uninstall Magpie?</string>
+  <string name="magpie_uninstall_confirm_message">The gateway will stop and its binary will be deleted. Your Magpie provider settings are kept, so reinstalling restores them.</string>
   <string name="route_tools">Tools</string>
   <string name="route_skills" translatable="false">Skills</string>
   <string name="route_permissions">Permissions</string>

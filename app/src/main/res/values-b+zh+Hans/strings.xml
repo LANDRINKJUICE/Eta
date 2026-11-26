@@ -69,6 +69,8 @@
   <string name="magpie_uninstall">卸载</string>
   <string name="magpie_uninstalled">已卸载 Magpie</string>
   <string name="magpie_uninstall_failed">卸载 Magpie 失败</string>
+  <string name="magpie_uninstall_confirm_title">卸载 Magpie？</string>
+  <string name="magpie_uninstall_confirm_message">网关会停止并删除其二进制文件。你在 Magpie 里配置的 provider 会保留，重装后依然可用。</string>
   <string name="route_tools">工具能力</string>
   <string name="route_permissions">权限</string>
   <string name="route_system_enhancements">系统增强</string>

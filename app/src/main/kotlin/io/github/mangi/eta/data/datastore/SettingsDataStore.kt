@@ -293,7 +293,7 @@ internal object SettingsDataStore {
         dataStore.edit { preferences -> preferences[MAGPIE_PANEL_KEY] = key }
     }
 
-    /** Magpie 网关是否已完成首次运行授权；卸载 Magpie 时应清除。 */
+    /** Magpie 网关是否已完成首次运行授权；安装与卸载时都会重置为未确认。 */
     suspend fun magpieFirstRunConfirmed(): Boolean {
         ensureInitialized()
         return dataStore.data.catch { cause ->

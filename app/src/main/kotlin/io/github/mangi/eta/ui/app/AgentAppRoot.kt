@@ -260,12 +260,10 @@ fun AgentAppRoot(
     // 菜单项以 magpieInstalled 为准：它由下面的探测填充，未就绪时天然不显示。
     var magpieFirstRunConfirmed by remember { mutableStateOf(false) }
 
-    /** 探测一次安装与运行状态。菜单展开、安装完成、启动停止后都走这里。 */
+    /** 探测安装状态与首次运行授权。首帧、回到前台、切回首页、启动失败时都走这里。 */
     suspend fun refreshMagpieState() {
-        val installed = magpieManager.installed()
-        magpieInstalled = installed
-        // 记录里存活，或端口已可用，都算运行中；后者覆盖进程被意外重启的情况。
-        // 安装完成会清掉授权标记，这里一并同步，避免内存与磁盘不一致。
+        magpieInstalled = magpieManager.installed()
+        // 安装与卸载都会重置授权标记，这里一并同步，避免内存与磁盘不一致。
         magpieFirstRunConfirmed = SettingsDataStore.magpieFirstRunConfirmed()
     }
 
@@ -390,7 +388,7 @@ fun AgentAppRoot(
                             Toast.makeText(context, R.string.provider_i18n_no_browser, Toast.LENGTH_SHORT).show()
                         }
                     } else {
-                        // 启动失败：按真实状态回写，避免菜单停留在错误的「运行中」。
+                        // 启动失败：重新确认安装状态，避免菜单停留在过期判断上。
                         refreshMagpieState()
                         Toast.makeText(context, R.string.magpie_not_running, Toast.LENGTH_SHORT).show()
                     }
@@ -491,9 +489,13 @@ fun AgentAppRoot(
     ChatImagePreviewHost {
         val previewer = LocalChatImagePreviewer.current
         LaunchedEffect(previewer, navigationResetKey) {
-            snapshotFlow { backStack.lastOrNull() }.collect {
+            snapshotFlow { backStack.lastOrNull() }.collect { route ->
                 if (previewer?.request != null) {
                     previewer.closeImmediately()
+                }
+                // 从 Linux 工具页返回首页时刷新 Magpie 状态：安装或卸载都发生在那一页。
+                if (route == AppRoute.Home) {
+                    refreshMagpieState()
                 }
             }
         }

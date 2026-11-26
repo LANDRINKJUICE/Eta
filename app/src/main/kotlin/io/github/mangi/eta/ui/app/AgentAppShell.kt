@@ -396,7 +396,7 @@ private fun TopBarOverflowMenu(
 
     GlassIconButton(
         onClick = {
-            // 每次展开都重新探测：安装完成、进程意外退出或手动停掉后，菜单要立刻反映真实状态。
+            // 展开前重新探测安装状态：在别处装好或卸载后，菜单项要立刻反映真实情况。
             onRefreshMagpieState()
             showMenu = true
         },

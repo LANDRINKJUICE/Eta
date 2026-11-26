@@ -68,6 +68,8 @@
   <string name="magpie_uninstall">解除安裝</string>
   <string name="magpie_uninstalled">已解除安裝 Magpie</string>
   <string name="magpie_uninstall_failed">解除安裝 Magpie 失敗</string>
+  <string name="magpie_uninstall_confirm_title">解除安裝 Magpie？</string>
+  <string name="magpie_uninstall_confirm_message">閘道會停止並刪除其二進位檔。你在 Magpie 裡設定的 provider 會保留，重新安裝後依然可用。</string>
   <string name="route_tools">工具</string>
   <string name="route_permissions">權限</string>
   <string name="route_system_enhancements">系統增強</string>

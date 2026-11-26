@@ -44,6 +44,8 @@ import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.ui.app.launchForegroundExecution
 import io.github.mangi.eta.ui.state.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.app.rememberExecutionNotificationRequest
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.navigation.AppRoute
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +56,7 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.glass.GlassDialog
 
 private enum class InstallTarget {
     BASE,
@@ -146,13 +149,22 @@ internal fun LinuxEnvironmentScreen(
     var status by remember(installer) { mutableStateOf(installer.status()) }
     var debianStatus by remember(debianInstaller) { mutableStateOf(debianInstaller.status()) }
     // Magpie 的启停与卸载只在本页操作，状态在这里单独跟踪。
+    // backend 变化由 manager 内部的 rootfs provider 动态处理，不必重建实例。
     val magpieManager = remember(appContext, selectedDistribution) {
         MagpieGatewayManager(appContext, selectedDistribution)
     }
-    var magpieRunning by remember { mutableStateOf(false) }
+    // 切换发行版或 backend 都会换 rootfs，运行状态需要按新环境重新判断。
+    var magpieRunning by remember(selectedDistribution, backend) { mutableStateOf(false) }
     var magpieBusy by remember { mutableStateOf(false) }
-    LaunchedEffect(magpieManager) {
+    var magpieUninstallConfirm by remember { mutableStateOf(false) }
+
+    /** 探测网关是否在跑。首次进入、安装完成、启停与卸载后都走这里。 */
+    suspend fun refreshMagpieRunning() {
         magpieRunning = magpieManager.running() || magpieManager.reachable()
+    }
+
+    LaunchedEffect(magpieManager, backend) {
+        refreshMagpieRunning()
     }
     var busyTarget by remember { mutableStateOf<InstallTarget?>(null) }
     var progress by remember { mutableStateOf<AlpineInstallProgress?>(null) }
@@ -410,6 +422,7 @@ internal fun LinuxEnvironmentScreen(
                                     ) {
                                         // 重新安装后需要再做一次运行授权。
                                         SettingsDataStore.setMagpieFirstRunConfirmed(false)
+                                        refreshMagpieRunning()
                                     }
                                     profileProgressSummary = null
                                     busyTarget = null
@@ -434,9 +447,13 @@ internal fun LinuxEnvironmentScreen(
                                                 if (!magpieBusy) {
                                                     magpieBusy = true
                                                     coroutineScope.launch {
-                                                        magpieManager.stop()
-                                                        magpieRunning = magpieManager.running() || magpieManager.reachable()
-                                                        magpieBusy = false
+                                                        try {
+                                                            magpieManager.stop()
+                                                            refreshMagpieRunning()
+                                                        } finally {
+                                                            // 异常也要解锁，否则两个按钮会一直灰着。
+                                                            magpieBusy = false
+                                                        }
                                                     }
                                                 }
                                             },
@@ -448,21 +465,7 @@ internal fun LinuxEnvironmentScreen(
                                         minWidth = 0.dp,
                                         minHeight = 32.dp,
                                         insideMargin = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                        onClick = {
-                                            if (!magpieBusy) {
-                                                magpieBusy = true
-                                                coroutineScope.launch {
-                                                    val removed = magpieManager.uninstall()
-                                                    magpieRunning = magpieManager.running() || magpieManager.reachable()
-                                                    profileReady = profileReady +
-                                                        (InstallTarget.MAGPIE to profileInstallers.getValue(InstallTarget.MAGPIE).isReady())
-                                                    resultMessage = context.getString(
-                                                        if (removed) R.string.magpie_uninstalled else R.string.magpie_uninstall_failed,
-                                                    )
-                                                    magpieBusy = false
-                                                }
-                                            }
-                                        },
+                                        onClick = { if (!magpieBusy) magpieUninstallConfirm = true },
                                     )
                                 }
                                 TextButton(
@@ -522,6 +525,39 @@ internal fun LinuxEnvironmentScreen(
                 }
             }
         }
+    }
+
+    // 卸载会删掉二进制并停止网关，属于不可撤销操作，先让用户确认。
+    GlassDialog(
+        show = magpieUninstallConfirm,
+        backdrop = currentGlassOverlayBackdrop(),
+        title = stringResource(R.string.magpie_uninstall_confirm_title),
+        summary = stringResource(R.string.magpie_uninstall_confirm_message),
+        onDismissRequest = { magpieUninstallConfirm = false },
+    ) {
+        DialogActions(
+            confirmText = stringResource(R.string.magpie_uninstall),
+            destructive = true,
+            onCancel = { magpieUninstallConfirm = false },
+            onConfirm = {
+                magpieUninstallConfirm = false
+                magpieBusy = true
+                coroutineScope.launch {
+                    try {
+                        val removed = magpieManager.uninstall()
+                        refreshMagpieRunning()
+                        profileReady = profileReady +
+                            (InstallTarget.MAGPIE to profileInstallers.getValue(InstallTarget.MAGPIE).isReady())
+                        resultMessage = context.getString(
+                            if (removed) R.string.magpie_uninstalled else R.string.magpie_uninstall_failed,
+                        )
+                    } finally {
+                        // 异常也要解锁，否则按钮会一直灰着。
+                        magpieBusy = false
+                    }
+                }
+            },
+        )
     }
 }
 
