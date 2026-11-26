@@ -1,0 +1,98 @@
+name: Magpie Feature Build
+
+# 仅用于功能分支的构建验证：与作者的 android-release.yml 相互独立，
+# 同步上游时不会产生冲突。产物为 Debug 与 Release 双包，签名沿用仓库 Secrets。
+on:
+  push:
+    branches:
+      - "feat/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: magpie-feature-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apks:
+    name: 构建 Debug 与 Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: 配置构建环境
+        uses: ./.github/actions/setup-build
+
+      - name: 还原发布证书
+        env:
+          ETA_RELEASE_KEYSTORE_BASE64: ${{ secrets.ETA_RELEASE_KEYSTORE_BASE64 }}
+          ETA_RELEASE_STORE_PASSWORD: ${{ secrets.ETA_RELEASE_STORE_PASSWORD }}
+          ETA_RELEASE_KEY_ALIAS: ${{ secrets.ETA_RELEASE_KEY_ALIAS }}
+          ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$ETA_RELEASE_KEYSTORE_BASE64" ||
+                -z "$ETA_RELEASE_STORE_PASSWORD" ||
+                -z "$ETA_RELEASE_KEY_ALIAS" ||
+                -z "$ETA_RELEASE_KEY_PASSWORD" ]]; then
+            echo "::error::缺少 Release 签名 Secrets，请检查仓库的 Actions Secrets。"
+            exit 1
+          fi
+          printf '%s' "$ETA_RELEASE_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > "$RUNNER_TEMP/eta-release.jks"
+
+      - name: 构建 Debug 与 Release APK
+        env:
+          ETA_RELEASE_STORE_FILE: ${{ runner.temp }}/eta-release.jks
+          ETA_RELEASE_STORE_PASSWORD: ${{ secrets.ETA_RELEASE_STORE_PASSWORD }}
+          ETA_RELEASE_KEY_ALIAS: ${{ secrets.ETA_RELEASE_KEY_ALIAS }}
+          ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
+        run: |
+          ./gradlew --no-daemon --no-configuration-cache \
+            -Peta.buildMetadata="${GITHUB_SHA::7}" \
+            :app:assembleDebug :app:assembleRelease
+
+      - name: 验证并整理 APK
+        run: |
+          shopt -s nullglob
+          debug_apks=(app/build/outputs/apk/debug/Eta-v*.apk)
+          release_apks=(app/build/outputs/apk/release/Eta-v*.apk)
+          apksigner_path="$(find "$ANDROID_HOME/build-tools" \
+            -type f -name apksigner | sort -V | tail -n 1)"
+
+          if [[ ${#debug_apks[@]} -ne 1 ]]; then
+            echo "::error::Debug APK 数量异常（${#debug_apks[@]}）。"
+            exit 1
+          fi
+          if [[ ${#release_apks[@]} -ne 1 ]]; then
+            echo "::error::Release APK 数量异常（${#release_apks[@]}）。"
+            exit 1
+          fi
+          if [[ -z "$apksigner_path" ]]; then
+            echo "::error::未找到 apksigner。"
+            exit 1
+          fi
+
+          "$apksigner_path" verify "${release_apks[0]}"
+          "$apksigner_path" verify "${debug_apks[0]}"
+
+      - name: 上传 Debug APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: eta-debug
+          path: app/build/outputs/apk/debug/Eta-v*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 上传 Release APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: eta-release
+          path: app/build/outputs/apk/release/Eta-v*.apk
+          if-no-files-found: error
+          retention-days: 30

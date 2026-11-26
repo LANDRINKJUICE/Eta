@@ -58,6 +58,15 @@
   <string name="action_more">More options</string>
   <string name="action_open_terminal">Open terminal</string>
   <string name="action_open_browser">Open browser</string>
+  <string name="action_open_magpie">Open Magpie</string>
+  <string name="action_close_magpie">Close Magpie</string>
+  <string name="magpie_run_confirm_title">Run the Magpie gateway?</string>
+  <string name="magpie_run_confirm_message">Magpie will run in the background inside Linux on 127.0.0.1:3425, and stays running until you close it.</string>
+  <string name="magpie_close_confirm_title">Stop the Magpie gateway?</string>
+  <string name="magpie_close_confirm_message">Models served through Magpie stop working until you start it again.</string>
+  <string name="magpie_run">Run</string>
+  <string name="magpie_stop">Stop</string>
+  <string name="magpie_not_running">Magpie did not start. Check the Linux environment and try again.</string>
   <string name="route_tools">Tools</string>
   <string name="route_skills" translatable="false">Skills</string>
   <string name="route_permissions">Permissions</string>
@@ -972,6 +981,9 @@
   <string name="linux_ssh_tools">SSH remote access</string>
   <string name="linux_ssh_tools_summary">Install the full OpenSSH suite (sshd, ssh-keygen, ssh-agent, and sftp-server); the base environment already includes the ssh/scp/sftp client</string>
   <string name="linux_ssh_tools_ready">sshd, ssh-keygen, and ssh-agent are ready</string>
+  <string name="linux_magpie_gateway">Magpie gateway</string>
+  <string name="linux_magpie_gateway_summary">Install the local Magpie model gateway (122 MB) and serve it on 127.0.0.1:3425; configure its providers with the magpie CLI inside Linux</string>
+  <string name="linux_magpie_gateway_ready">Magpie is installed; manage it from the chat menu</string>
   <string name="linux_profile_dependency_missing">Install %1$s first</string>
   <string name="linux_profile_stage_checking">Checking the Linux base environment</string>
   <string name="linux_profile_stage_downloading">Downloading %1$s</string>

@@ -163,6 +163,7 @@ internal object SettingsDataStore {
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
+    private val MAGPIE_FIRST_RUN_CONFIRMED = booleanPreferencesKey("magpie_first_run_confirmed")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
     private val APPEARANCE_PALETTE_STYLE = stringPreferencesKey("appearance_palette_style")
@@ -275,6 +276,23 @@ internal object SettingsDataStore {
         dataStore.edit { preferences ->
             val key = stringPreferencesKey("linux_backend.$distribution")
             if (backend == null) preferences.remove(key) else preferences[key] = backend
+        }
+    }
+
+    /** Magpie 网关是否已完成首次运行授权；卸载 Magpie 时应清除。 */
+    fun magpieFirstRunConfirmed(): Boolean {
+        ensureInitialized()
+        return kotlinx.coroutines.runBlocking {
+            dataStore.data.catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }.map { it[MAGPIE_FIRST_RUN_CONFIRMED] ?: false }.first()
+        }
+    }
+
+    suspend fun setMagpieFirstRunConfirmed(confirmed: Boolean) {
+        ensureInitialized()
+        dataStore.edit { preferences ->
+            if (confirmed) preferences[MAGPIE_FIRST_RUN_CONFIRMED] = true else preferences.remove(MAGPIE_FIRST_RUN_CONFIRMED)
         }
     }
 

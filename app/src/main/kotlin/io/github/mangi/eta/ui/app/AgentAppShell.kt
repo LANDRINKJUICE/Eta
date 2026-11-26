@@ -26,6 +26,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.vectorResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -102,6 +104,10 @@ internal fun AgentAppShell(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    magpieInstalled: Boolean,
+    magpieRunning: Boolean,
+    onOpenMagpie: () -> Unit,
+    onCloseMagpie: () -> Unit,
     onSelectConversation: (String) -> Unit,
     onConversationTogglePin: (ConversationSummaryUi) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
@@ -145,6 +151,10 @@ internal fun AgentAppShell(
                         onNewConversation = onNewConversation,
                         onOpenTerminal = onOpenTerminal,
                         onOpenBrowser = onOpenBrowser,
+                        magpieInstalled = magpieInstalled,
+                        magpieRunning = magpieRunning,
+                        onOpenMagpie = onOpenMagpie,
+                        onCloseMagpie = onCloseMagpie,
                         homeTitle = homeTitle,
                         homeCharacter = homeCharacter,
                         homeModelPickerState = homeModelPickerState,
@@ -225,6 +235,10 @@ private fun AgentTopBar(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    magpieInstalled: Boolean,
+    magpieRunning: Boolean,
+    onOpenMagpie: () -> Unit,
+    onCloseMagpie: () -> Unit,
     homeTitle: String?,
     homeCharacter: RoleplayChatUi?,
     homeModelPickerState: AgentModelPickerUiState?,
@@ -241,6 +255,10 @@ private fun AgentTopBar(
             onNewConversation = onNewConversation,
             onOpenTerminal = onOpenTerminal,
             onOpenBrowser = onOpenBrowser,
+            magpieInstalled = magpieInstalled,
+            magpieRunning = magpieRunning,
+            onOpenMagpie = onOpenMagpie,
+            onCloseMagpie = onCloseMagpie,
         ) {
             AgentTopBarChatHeader(
                 conversationTitle = homeTitle,
@@ -272,6 +290,10 @@ private fun HomeTopBar(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    magpieInstalled: Boolean,
+    magpieRunning: Boolean,
+    onOpenMagpie: () -> Unit,
+    onCloseMagpie: () -> Unit,
     centerContent: @Composable () -> Unit,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
@@ -340,6 +362,10 @@ private fun HomeTopBar(
                 onNewConversation = onNewConversation,
                 onOpenTerminal = onOpenTerminal,
                 onOpenBrowser = onOpenBrowser,
+                magpieInstalled = magpieInstalled,
+                magpieRunning = magpieRunning,
+                onOpenMagpie = onOpenMagpie,
+                onCloseMagpie = onCloseMagpie,
             )
         }
     }
@@ -352,6 +378,10 @@ private fun TopBarOverflowMenu(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    magpieInstalled: Boolean,
+    magpieRunning: Boolean,
+    onOpenMagpie: () -> Unit,
+    onCloseMagpie: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     LaunchedEffect(isCurrentRoute) {
@@ -365,6 +395,8 @@ private fun TopBarOverflowMenu(
     val newConversationText = stringResource(R.string.action_new_conversation)
     val openTerminalText = stringResource(R.string.action_open_terminal)
     val openBrowserText = stringResource(R.string.action_open_browser)
+    val openMagpieText = stringResource(R.string.action_open_magpie)
+    val closeMagpieText = stringResource(R.string.action_close_magpie)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
     )
@@ -429,6 +461,26 @@ private fun TopBarOverflowMenu(
                         onOpenBrowser()
                     },
                 )
+                if (magpieInstalled) {
+                    GlassPopupItem(
+                        text = openMagpieText,
+                        icon = ImageVector.vectorResource(R.drawable.ic_magpie),
+                        onClick = {
+                            showMenu = false
+                            onOpenMagpie()
+                        },
+                    )
+                }
+                if (magpieInstalled && magpieRunning) {
+                    GlassPopupItem(
+                        text = closeMagpieText,
+                        icon = ImageVector.vectorResource(R.drawable.ic_magpie),
+                        onClick = {
+                            showMenu = false
+                            onCloseMagpie()
+                        },
+                    )
+                }
                 if (hasSpeechPlayback) {
                     GlassPopupItem(
                         text = autoReadText,

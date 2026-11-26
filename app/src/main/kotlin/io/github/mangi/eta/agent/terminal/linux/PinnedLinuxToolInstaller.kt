@@ -14,6 +14,7 @@ import io.github.mangi.eta.agent.terminal.shellQuote
 internal enum class ManagedLinuxTool {
     UV,
     NODE,
+    MAGPIE,
 }
 
 internal class PinnedLinuxToolInstaller(
@@ -59,6 +60,7 @@ internal class PinnedLinuxToolInstaller(
         val command = when (tool) {
             ManagedLinuxTool.UV -> uvActivationCommand(artifact, archive, rootfs)
             ManagedLinuxTool.NODE -> nodeActivationCommand(artifact, archive, rootfs)
+            ManagedLinuxTool.MAGPIE -> magpieActivationCommand(archive, rootfs)
         }
         val result = InstallerShellRunner.run(
             command = command,
@@ -75,6 +77,9 @@ internal class PinnedLinuxToolInstaller(
 
     private suspend fun activateRootless(tool: ManagedLinuxTool, artifact: VerifiedArtifact, archive: File, rootfs: File): Boolean {
         val name = tool.name.lowercase()
+        if (tool == ManagedLinuxTool.MAGPIE) {
+            return activateRootlessMagpie(artifact, archive, rootfs)
+        }
         val versions = File(rootfs, "opt/eta/$name")
         val target = File(versions, artifact.version)
         val staging = File(rootfs, "opt/eta/$name.installing")
@@ -94,11 +99,57 @@ internal class PinnedLinuxToolInstaller(
                     java.nio.file.Files.deleteIfExists(link)
                     java.nio.file.Files.createSymbolicLink(link, java.nio.file.Paths.get("../../../opt/eta/node/${artifact.version}/bin/$command"))
                 }
+                ManagedLinuxTool.MAGPIE -> Unit
             }
             return true
         } finally {
             if (staging.exists()) staging.deleteRecursively()
         }
+    }
+
+    /**
+     * Magpie 是单文件静态二进制，不打包也不解压：免 Root 路径直接放到 rootfs 的
+     * `opt/eta/magpie`，再在 `usr/local/bin` 建同名可执行入口。
+     */
+    private fun activateRootlessMagpie(artifact: VerifiedArtifact, archive: File, rootfs: File): Boolean {
+        val target = File(rootfs, "opt/eta/magpie")
+        val staging = File(rootfs, "opt/eta/magpie.installing")
+        try {
+            target.parentFile?.mkdirs()
+            staging.delete()
+            archive.copyTo(staging, overwrite = true)
+            require(staging.setExecutable(true, false))
+            if (target.exists() && !target.delete()) return false
+            if (!staging.renameTo(target)) return false
+            val localBin = File(rootfs, "usr/local/bin").apply { mkdirs() }
+            val entry = File(localBin, "magpie")
+            entry.delete()
+            entry.writeText(
+                """
+                #!/bin/sh
+                exec /opt/eta/magpie "${'$'}@"
+                """.trimIndent() + "\n",
+            )
+            require(entry.setExecutable(true, false))
+            return true
+        } finally {
+            if (staging.exists()) staging.delete()
+        }
+    }
+
+    private fun magpieActivationCommand(archive: File, rootfs: File): String {
+        val localBin = File(rootfs, "usr/local/bin")
+        val target = File(localBin, "magpie")
+        return """
+            ${AndroidBusyBox.discoveryScript()}
+            [ -n "${'$'}eta_busybox" ] || exit 127
+            eta_archive=${shellQuote(archive.absolutePath)}
+            eta_target=${shellQuote(target.absolutePath)}
+            "${'$'}eta_busybox" mkdir -p ${shellQuote(localBin.absolutePath)} || exit 66
+            "${'$'}eta_busybox" rm -f "${'$'}eta_target" || exit 68
+            "${'$'}eta_busybox" cp "${'$'}eta_archive" "${'$'}eta_target" || exit 69
+            "${'$'}eta_busybox" chmod 0755 "${'$'}eta_target" || exit 70
+        """.trimIndent()
     }
 
     private fun uvActivationCommand(
@@ -175,6 +226,8 @@ internal class PinnedLinuxToolInstaller(
 internal object PinnedLinuxToolArtifacts {
     private const val UV_VERSION = "0.12.7"
     private const val NODE_VERSION = "26.8.1"
+    private const val MAGPIE_VERSION = "v0.1.4827"
+    private const val MAGPIE_RELEASE_BASE_URL = "https://github.com/yetone/magpie-releases/releases/download"
     private const val GITHUB_PROXY_PREFIX = "https://gh-proxy.com/"
 
     fun artifactFor(
@@ -184,6 +237,7 @@ internal object PinnedLinuxToolArtifacts {
     ): VerifiedArtifact? = when (tool) {
         ManagedLinuxTool.UV -> uvArtifact(distribution, abis)
         ManagedLinuxTool.NODE -> nodeArtifact(distribution, abis)
+        ManagedLinuxTool.MAGPIE -> magpieArtifact(abis)
     }
 
     private fun uvArtifact(
@@ -229,6 +283,38 @@ internal object PinnedLinuxToolArtifacts {
         return VerifiedArtifact(
             id = "uv-$architecture-$libc",
             version = UV_VERSION,
+            fileName = fileName,
+            url = officialUrl,
+            sha256 = sha256,
+            sizeBytes = sizeBytes,
+            preferredUrls = listOf(GITHUB_PROXY_PREFIX + officialUrl),
+        )
+    }
+
+    /** Magpie 网关的 Linux ARM64 单文件制品；上游以独立 release 仓库发布，只提供静态链接的 CLI 构建。 */
+    private fun magpieArtifact(
+        abis: List<String>,
+    ): VerifiedArtifact? = abis.firstNotNullOfOrNull { abi ->
+        when (abi) {
+            "arm64-v8a" -> magpieArtifact(
+                architecture = "arm64",
+                sha256 = "22c3e584599b0d7be08af472f1d8fcbbfa43b552285040cafef22a9e37c7d41f",
+                sizeBytes = 96_141_474L,
+            )
+            else -> null
+        }
+    }
+
+    private fun magpieArtifact(
+        architecture: String,
+        sha256: String,
+        sizeBytes: Long,
+    ): VerifiedArtifact {
+        val fileName = "magpie-cli-linux-$architecture"
+        val officialUrl = "${MAGPIE_RELEASE_BASE_URL}/${MAGPIE_VERSION}/$fileName"
+        return VerifiedArtifact(
+            id = "magpie-$architecture",
+            version = MAGPIE_VERSION,
             fileName = fileName,
             url = officialUrl,
             sha256 = sha256,

@@ -37,6 +37,7 @@ internal object ProviderReasoning {
             ProviderSourceTypes.OPENAI -> applyNamedReasoningEffort(request, effort)
             ProviderSourceTypes.XAI -> applyNamedReasoningEffort(request, effort)
             ProviderSourceTypes.CUSTOM -> applyNamedReasoningEffort(request, effort)
+            ProviderSourceTypes.MAGPIE -> applyNamedReasoningEffort(request, effort)
         }
     }
 

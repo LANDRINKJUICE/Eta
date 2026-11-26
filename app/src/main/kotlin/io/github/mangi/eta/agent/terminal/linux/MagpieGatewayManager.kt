@@ -1,0 +1,129 @@
+package io.github.mangi.eta.agent.terminal.linux
+
+import android.content.Context
+import io.github.mangi.eta.agent.terminal.DaemonStartResult
+import io.github.mangi.eta.agent.terminal.DetachedTask
+import io.github.mangi.eta.agent.terminal.DetachedTaskSupervisor
+import io.github.mangi.eta.agent.terminal.LinuxDistribution
+import io.github.mangi.eta.agent.terminal.LinuxExecutionBackend
+import io.github.mangi.eta.agent.terminal.TerminalEnvironment
+import io.github.mangi.eta.agent.terminal.TerminalRuntime
+import io.github.mangi.eta.core.AndroidAgentLogger
+import java.io.File
+import java.net.InetSocketAddress
+import java.net.Socket
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+
+/**
+ * 管理 Linux 环境内的 Magpie 网关进程。
+ *
+ * 二进制由 [PinnedLinuxToolInstaller] 安装，本类只负责启停与状态查询；
+ * Magpie 自身的模型服务商配置仍走它自己的 CLI 与配置文件，这里不做代理。
+ */
+internal class MagpieGatewayManager(
+    context: Context,
+    private val distribution: LinuxDistribution,
+) {
+
+    private val appContext = context.applicationContext
+    private val supervisor = DetachedTaskSupervisor(
+        AndroidAgentLogger,
+        DetachedTaskSupervisor.defaultRecordsFile(appContext),
+    )
+
+    private fun rootfs(): File = LinuxEnvironmentPaths.rootfsDir(appContext, distribution)
+
+    private fun environment(): TerminalEnvironment = when (distribution) {
+        LinuxDistribution.ALPINE -> TerminalEnvironment.ALPINE
+        LinuxDistribution.DEBIAN -> TerminalEnvironment.DEBIAN
+    }
+
+    /** 网关是否已安装：rootfs 内存在可执行的 magpie 即视为已安装。 */
+    fun installed(): Boolean = magpiePath() != null
+
+    private fun magpiePath(): String? {
+        val rootfs = rootfs()
+        if (!LinuxEnvironmentPaths.rootfsReady(rootfs.absolutePath)) return null
+        if (LinuxEnvironmentPaths.backendOf(rootfs.absolutePath) == LinuxExecutionBackend.PROOT) {
+            return when {
+                File(rootfs, "usr/local/bin/magpie").canExecute() -> "/usr/local/bin/magpie"
+                File(rootfs, "opt/eta/magpie").canExecute() -> "/opt/eta/magpie"
+                else -> null
+            }
+        }
+        return if (File(rootfs, "usr/local/bin/magpie").canExecute()) "/usr/local/bin/magpie" else null
+    }
+
+    private fun gatewayTask(): DetachedTask? =
+        supervisor.list().firstOrNull { it.task.description == TASK_DESCRIPTION }?.task
+
+    /** 进程仍在运行。 */
+    fun running(): Boolean =
+        supervisor.list().any { it.running && it.task.description == TASK_DESCRIPTION }
+
+    private suspend fun answering(): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            Socket().use { it.connect(InetSocketAddress(GATEWAY_HOST, GATEWAY_PORT), PROBE_TIMEOUT_MS) }
+            true
+        }.getOrDefault(false)
+    }
+
+    private suspend fun awaitReady(timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (answering()) return true
+            delay(500)
+        }
+        return answering()
+    }
+
+    /** 启动网关；已在运行时直接返回可用状态。就绪等待失败会回收残留任务。 */
+    suspend fun start(): Boolean {
+        if (installed().not()) return false
+        if (answering()) return true
+        if (running()) stop()
+        val executable = magpiePath() ?: return false
+        val environment = environment()
+        val identity = TerminalRuntime.defaultIdentity(environment, rootfs().absolutePath)
+        // PRoot 与 chroot 都以 HOME=/root 进入 rootfs，见 ProotCommandBuilder 的 env 前缀。
+        val result = supervisor.start(
+            command = "HOME=/root XDG_CONFIG_HOME=/root/.config exec $executable serve",
+            cwd = "/root",
+            identity = identity,
+            environment = environment,
+            commandTask = false,
+            description = TASK_DESCRIPTION,
+        )
+        val submitted = result is DaemonStartResult.Started
+        AndroidAgentLogger.info(
+            "Magpie gateway action=start outcome=${if (submitted) "submitted" else "failed"} identity=$identity",
+        )
+        if (!submitted) return false
+        val ready = awaitReady(START_TIMEOUT_MS)
+        if (!ready) stop()
+        return ready
+    }
+
+    /** 停止网关；没有运行中的任务也视为成功。 */
+    fun stop(): Boolean {
+        val task = gatewayTask() ?: return true
+        val stopped = supervisor.stop(task.id)
+        AndroidAgentLogger.info(
+            "Magpie gateway action=stop outcome=${if (stopped) "succeeded" else "failed"} id=${task.id}",
+        )
+        return stopped
+    }
+
+    companion object {
+        private const val GATEWAY_HOST = "127.0.0.1"
+        private const val GATEWAY_PORT = 3425
+        private const val TASK_DESCRIPTION = "magpie-gateway"
+        private const val PROBE_TIMEOUT_MS = 800
+        private const val START_TIMEOUT_MS = 20_000L
+
+        /** 交给系统浏览器打开的面板地址。 */
+        const val GATEWAY_URL = "http://$GATEWAY_HOST:$GATEWAY_PORT"
+    }
+}

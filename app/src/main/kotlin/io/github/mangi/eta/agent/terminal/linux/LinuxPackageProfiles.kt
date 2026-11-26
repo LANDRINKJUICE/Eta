@@ -99,7 +99,29 @@ internal object LinuxPackageProfiles {
             ),
         ),
     )
-    val ALL = listOf(PYTHON, NODE, SSH)
+    /**
+     * Magpie 模型网关：把上游静态 CLI 放进 rootfs，并预建其配置目录。
+     * 发行版无关：静态链接产物在 Alpine 与 Debian 上表现一致。
+     */
+    val MAGPIE = LinuxPackageProfile(
+        id = "magpie",
+        markerName = AlpineEnvironmentPaths.MAGPIE_GATEWAY_MARKER,
+        revision = AlpineEnvironmentPaths.MAGPIE_GATEWAY_REVISION,
+        specs = mapOf(
+            LinuxDistribution.ALPINE to LinuxPackageSpec(
+                managedTool = ManagedLinuxTool.MAGPIE,
+                setupScript = MAGPIE_CONFIG_SCRIPT,
+            ),
+            LinuxDistribution.DEBIAN to LinuxPackageSpec(
+                managedTool = ManagedLinuxTool.MAGPIE,
+                setupScript = MAGPIE_CONFIG_SCRIPT,
+            ),
+        ),
+    )
+    val ALL = listOf(PYTHON, NODE, SSH, MAGPIE)
+
+    /** chroot 与 PRoot 均以 HOME=/root 进入 rootfs，配置目录统一落在 /root 下。 */
+    private const val MAGPIE_CONFIG_SCRIPT = "mkdir -p /root/.config/magpie"
 }
 
 internal fun linuxPackageProfileReady(rootfs: File, profile: LinuxPackageProfile): Boolean {

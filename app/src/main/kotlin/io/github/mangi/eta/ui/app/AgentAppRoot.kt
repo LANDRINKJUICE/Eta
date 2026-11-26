@@ -2,6 +2,7 @@ package io.github.mangi.eta.ui.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -50,6 +51,9 @@ import io.github.mangi.eta.ui.screens.scheduled.ScheduledTaskDetailScreen
 import io.github.mangi.eta.ui.screens.scheduled.ScheduledTaskEditorScreen
 import io.github.mangi.eta.ui.screens.scheduled.ScheduledTasksScreen
 import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.agent.terminal.linux.MagpieGatewayManager
+import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.screens.settings.AppearanceSettingsScreen
 import io.github.mangi.eta.ui.IncomingShareRequest
@@ -202,6 +206,9 @@ fun AgentAppRoot(
     var conversationExportTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
     var messageDeleteTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
     var messageRegenerateTarget by remember { mutableStateOf<MessageMutationTarget?>(null) }
+    var magpieInstalled by remember { mutableStateOf(false) }
+    var magpieRunning by remember { mutableStateOf(false) }
+    var magpiePendingAction by remember { mutableStateOf<MagpiePendingAction?>(null) }
     val conversationExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/markdown"),
     ) { uri ->
@@ -237,6 +244,21 @@ fun AgentAppRoot(
 
     LaunchedEffect(Unit) {
         RuntimeConfigRepository.ensureDefaults(EtaApp.serviceInstance)
+    }
+
+    // Magpie 网关：状态只在动作完成后与首帧刷新，避免组合期做文件系统探测。
+    val magpieManager = remember(appContext) {
+        MagpieGatewayManager(
+            appContext,
+            LinuxEnvironmentSettingsRepository.current(appContext),
+        )
+    }
+    // 菜单项以 magpieInstalled 为准：它由下面的探测填充，未就绪时天然不显示。
+    var magpieFirstRunConfirmed by remember { mutableStateOf(false) }
+    LaunchedEffect(magpieManager) {
+        magpieInstalled = magpieManager.installed()
+        magpieRunning = magpieInstalled && magpieManager.running()
+        magpieFirstRunConfirmed = SettingsDataStore.magpieFirstRunConfirmed()
     }
 
     LaunchedEffect(requestedConversationId) {
@@ -322,6 +344,25 @@ fun AgentAppRoot(
         context.startActivity(AgentBrowserActivity.createIntent(context, sessionKey))
     }
 
+    // Magpie 网关：确认类动作停在弹框上，放行后转为 Open 再统一执行。
+    LaunchedEffect(magpiePendingAction) {
+        if (magpiePendingAction != MagpiePendingAction.Open) return@LaunchedEffect
+        magpiePendingAction = null
+        magpieInstalled = magpieManager.installed()
+        if (!magpieInstalled) return@LaunchedEffect
+        val ready = magpieManager.start()
+        magpieRunning = ready
+        if (ready) {
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(MagpieGatewayManager.GATEWAY_URL)))
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(context, R.string.provider_i18n_no_browser, Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, R.string.magpie_not_running, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     @Composable
     fun RoutedShell(
         route: AppRoute,
@@ -345,6 +386,16 @@ fun AgentAppRoot(
             onNewConversation = { createConversation() },
             onOpenTerminal = { pushRoute(AppRoute.Terminal) },
             onOpenBrowser = { openConversationBrowser() },
+            magpieInstalled = magpieInstalled,
+            magpieRunning = magpieRunning,
+            onOpenMagpie = {
+                magpiePendingAction = if (magpieFirstRunConfirmed) {
+                    MagpiePendingAction.Open
+                } else {
+                    MagpiePendingAction.ConfirmFirstRun
+                }
+            },
+            onCloseMagpie = { magpiePendingAction = MagpiePendingAction.ConfirmStop },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
             onConversationTogglePin = { conversation ->
                 agentState.toggleConversationPin(conversation.id)
@@ -992,6 +1043,40 @@ fun AgentAppRoot(
         )
     }
 
+    val magpieConfirmFirstRun = magpiePendingAction == MagpiePendingAction.ConfirmFirstRun
+    val magpieConfirmStop = magpiePendingAction == MagpiePendingAction.ConfirmStop
+    GlassDialog(
+        show = magpieConfirmFirstRun || magpieConfirmStop,
+        backdrop = sceneBackdrop,
+        title = stringResource(
+            if (magpieConfirmStop) R.string.magpie_close_confirm_title else R.string.magpie_run_confirm_title,
+        ),
+        summary = stringResource(
+            if (magpieConfirmStop) R.string.magpie_close_confirm_message else R.string.magpie_run_confirm_message,
+        ),
+        onDismissRequest = { magpiePendingAction = null },
+    ) {
+        DialogActions(
+            confirmText = stringResource(if (magpieConfirmStop) R.string.magpie_stop else R.string.magpie_run),
+            destructive = magpieConfirmStop,
+            onCancel = { magpiePendingAction = null },
+            onConfirm = {
+                val stopping = magpieConfirmStop
+                magpiePendingAction = null
+                uiScope.launch {
+                    if (stopping) {
+                        magpieManager.stop()
+                        magpieRunning = false
+                    } else {
+                        SettingsDataStore.setMagpieFirstRunConfirmed(true)
+                        magpieFirstRunConfirmed = true
+                        magpiePendingAction = MagpiePendingAction.Open
+                    }
+                }
+            },
+        )
+    }
+
     var retainedDeleteMessage by remember { mutableStateOf<MessageMutationTarget?>(null) }
     messageDeleteTarget?.let { retainedDeleteMessage = it }
     val deleteMessageSummary = retainedDeleteMessage?.let { target ->
@@ -1067,6 +1152,15 @@ private val CorePermissionAttentionIds = setOf(
     "accessibility",
     "notifications",
 )
+
+/**
+ * Magpie 网关待执行动作。确认类动作先停在弹框上，用户放行后才转入执行。
+ */
+private enum class MagpiePendingAction {
+    ConfirmFirstRun,
+    ConfirmStop,
+    Open,
+}
 
 private data class MessageMutationTarget(
     val messageId: String,

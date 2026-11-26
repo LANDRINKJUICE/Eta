@@ -27,6 +27,7 @@ internal object BuiltinProviders {
     const val OPENROUTER_ID = "builtin-openrouter"
     const val XAI_ID = "builtin-xai"
     const val GEMINI_ID = "builtin-gemini"
+    const val MAGPIE_ID = "builtin-magpie"
 
     val PROVIDERS: List<ProviderSetting> = listOf(
         OpenAiCompatibleProviderSetting(
@@ -134,6 +135,15 @@ internal object BuiltinProviders {
             name = "Gemini",
             isBuiltIn = true,
             sortOrder = 11,
+            systemPrompt = DEFAULT_SYSTEM_PROMPT,
+        ),
+        OpenAiCompatibleProviderSetting(
+            id = MAGPIE_ID,
+            name = "Magpie",
+            baseUrl = "http://127.0.0.1:3425/v1",
+            sourceType = ProviderSourceTypes.MAGPIE,
+            isBuiltIn = true,
+            sortOrder = 12,
             systemPrompt = DEFAULT_SYSTEM_PROMPT,
         ),
     )

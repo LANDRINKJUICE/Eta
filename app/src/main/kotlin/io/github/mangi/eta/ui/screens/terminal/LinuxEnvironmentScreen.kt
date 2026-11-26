@@ -38,6 +38,7 @@ import io.github.mangi.eta.agent.terminal.linux.LinuxPackageProfiles
 import io.github.mangi.eta.agent.terminal.linux.PackageProfileInstallProgress
 import io.github.mangi.eta.agent.terminal.linux.PackageProfileInstallResult
 import io.github.mangi.eta.agent.terminal.linux.PackageProfileInstallStage
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.ui.app.launchForegroundExecution
 import io.github.mangi.eta.ui.state.rememberDeviceCapabilities
@@ -60,6 +61,7 @@ private enum class InstallTarget {
     PYTHON,
     NODE,
     SSH,
+    MAGPIE,
 }
 
 private data class PackageProfileUi(
@@ -95,6 +97,13 @@ private val packageProfileUis = listOf(
         titleRes = R.string.linux_ssh_tools,
         summaryRes = R.string.linux_ssh_tools_summary,
         readyRes = R.string.linux_ssh_tools_ready,
+    ),
+    PackageProfileUi(
+        target = InstallTarget.MAGPIE,
+        profile = LinuxPackageProfiles.MAGPIE,
+        titleRes = R.string.linux_magpie_gateway,
+        summaryRes = R.string.linux_magpie_gateway_summary,
+        readyRes = R.string.linux_magpie_gateway_ready,
     ),
 )
 
@@ -386,6 +395,12 @@ internal fun LinuxEnvironmentScreen(
                                     }
                                     profileReady = profileReady +
                                         (profileUi.target to profileInstaller.isReady())
+                                    if (profileUi.target == InstallTarget.MAGPIE &&
+                                        profileReady[InstallTarget.MAGPIE] == true
+                                    ) {
+                                        // 重新安装后需要再做一次运行授权。
+                                        SettingsDataStore.setMagpieFirstRunConfirmed(false)
+                                    }
                                     profileProgressSummary = null
                                     busyTarget = null
                                     resultMessage = result.toMessage(context, profileTitle)
