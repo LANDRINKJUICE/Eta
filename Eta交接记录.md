@@ -10,7 +10,8 @@
 ## 一句话状态
 
 Magpie 网关已集成进 Eta fork，代码完成并推送，CI 构建通过（run `45777063819`，提交 `ea775ad`）。
-**待真机验证**：面板能否打开、图标是否正常、首次下载是否顺畅。
+**第二轮验证**：三处启动根因已修（详见 `docs/Eta改动说明.md` 二版）。
+待真机验证：面板能否打开、两个图标是否正常。
 
 ---
 
@@ -137,6 +138,8 @@ strings.xml ×3                 +12   三语文案
 | 1 | 编译失败 | `vectorResource` 导入写成 `graphics.vector` | 应为 `androidx.compose.ui.res` |
 | 2 | 编译失败 | `appContext` 未声明 | 用 `context.applicationContext` |
 | 3 | 打不开 | 端口用了 3425，且 `serve` 无面板 | 改 3430 + `--web` |
+| 3b | 打不开（真凶） | `DetachedTaskSupervisor` 缺 `linuxRootfsPath`，payload 直接返回「Linux rootfs 未配置」 | 照 `AgentLocalTools` 补全构造 |
+| 3c | 打不开（真凶） | `LaunchedEffect` 内清空自身 key 会取消协程，启动死在中途 | 改为点击处 `uiScope.launch` |
 | 4 | 面板 401 | 缺密钥 | 固定 `MAGPIE_WEB_KEY` + `?k=` |
 | 5 | 位置错 | 放在「打开浏览器」后面 | 移到「打开终端」后面 |
 | 6 | 图标小 | potrace 坐标未重算 viewport | viewport 108.46 |

@@ -268,6 +268,23 @@ res/values*/strings.xml                         +12×3   三语文案
 
 ## 11. 变更记录
 
+### 2026-11-26 二版：三处启动失败的根因
+
+经实测取证，Magpie 无法打开的根因有三处，均已修复：
+
+1. **`linuxRootfsPath` 未传**：`DetachedTaskSupervisor` 该参数默认 `null`，
+   `buildLinuxPayload` 取不到 rootfs 直接返回「Linux rootfs 未配置」，
+   进程从未被拉起。证据：`terminal-daemons.json` 里没有任何 `magpie-gateway` 记录。
+   修法：按 `AgentLocalTools` 的构造补上 `linuxRootfsPath` 与共享挂载。
+2. **`LaunchedEffect` 自取消**：在 `LaunchedEffect(magpiePendingAction)` 内把
+   `magpiePendingAction` 置为 null 会立即取消自身协程，启动流程死在第一个挂起点。
+   修法：改为点击处直接 `uiScope.launch`，不再用状态位驱动。
+3. **`gatewayTask()` 取到历史任务**：可能指向已结束的进程，导致停不掉当前实例。
+   修法：优先取 running，其次取最后一个。
+
+顺带处理：`supervisor.list()` 读 JSON 移到 IO 调度器、发行版切换后重建 manager、
+启动过程加 busy 防重入、停止后按真实状态回写。
+
 ### 2026-11-26 初版
 
 - 安装、启停、菜单入口、内置 Provider、图标、CI 全链路

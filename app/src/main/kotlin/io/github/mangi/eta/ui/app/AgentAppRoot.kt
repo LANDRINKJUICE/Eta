@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.R
@@ -209,6 +210,7 @@ fun AgentAppRoot(
     var magpieInstalled by remember { mutableStateOf(false) }
     var magpieRunning by remember { mutableStateOf(false) }
     var magpiePendingAction by remember { mutableStateOf<MagpiePendingAction?>(null) }
+    var magpieBusy by remember { mutableStateOf(false) }
     val conversationExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/markdown"),
     ) { uri ->
@@ -246,19 +248,23 @@ fun AgentAppRoot(
         RuntimeConfigRepository.ensureDefaults(EtaApp.serviceInstance)
     }
 
-    // Magpie 网关：首帧异步探测一次，之后由各动作直接更新状态，组合期不做文件系统访问。
+    // Magpie 网关：跟随当前选择的 Linux 发行版，切换发行版后自动重建。
     val magpieAppContext = context.applicationContext
-    val magpieManager = remember(magpieAppContext) {
-        MagpieGatewayManager(
-            magpieAppContext,
-            LinuxEnvironmentSettingsRepository.current(magpieAppContext),
-        )
+    val magpieDistribution by remember(magpieAppContext) {
+        LinuxEnvironmentSettingsRepository.selectedFlow(magpieAppContext)
+    }.collectAsStateWithLifecycle(
+        initialValue = LinuxEnvironmentSettingsRepository.current(magpieAppContext),
+    )
+    val magpieManager = remember(magpieAppContext, magpieDistribution) {
+        MagpieGatewayManager(magpieAppContext, magpieDistribution)
     }
     // 菜单项以 magpieInstalled 为准：它由下面的探测填充，未就绪时天然不显示。
     var magpieFirstRunConfirmed by remember { mutableStateOf(false) }
     LaunchedEffect(magpieManager) {
-        magpieInstalled = magpieManager.installed()
-        magpieRunning = magpieInstalled && magpieManager.running()
+        val installed = magpieManager.installed()
+        magpieInstalled = installed
+        // 记录里存活，或端口已可用，都算运行中；后者覆盖进程被意外重启的情况。
+        magpieRunning = installed && (magpieManager.running() || magpieManager.reachable())
         magpieFirstRunConfirmed = SettingsDataStore.magpieFirstRunConfirmed()
     }
 
@@ -345,22 +351,35 @@ fun AgentAppRoot(
         context.startActivity(AgentBrowserActivity.createIntent(context, sessionKey))
     }
 
-    // Magpie 网关：确认类动作停在弹框上，放行后转为 Open 再统一执行。
-    LaunchedEffect(magpiePendingAction) {
-        if (magpiePendingAction != MagpiePendingAction.Open) return@LaunchedEffect
-        magpiePendingAction = null
-        magpieInstalled = magpieManager.installed()
-        if (!magpieInstalled) return@LaunchedEffect
-        val ready = magpieManager.start()
-        magpieRunning = ready
-        if (ready) {
-            try {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(magpieManager.panelUrl())))
-            } catch (_: ActivityNotFoundException) {
-                Toast.makeText(context, R.string.provider_i18n_no_browser, Toast.LENGTH_SHORT).show()
+    /**
+     * 启动网关并打开面板。不用 LaunchedEffect 驱动：清空它自身的 key 会立刻取消协程，
+     * 启动流程会死在第一个挂起点上。这里直接从交互处 launch，busy 只用于挡重入。
+     */
+    val openMagpieGateway: () -> Unit = {
+        if (!magpieBusy) {
+            magpieBusy = true
+            uiScope.launch {
+                try {
+                    val installed = magpieManager.installed()
+                    magpieInstalled = installed
+                    if (!installed) return@launch
+                    val ready = magpieManager.start()
+                    magpieRunning = ready
+                    if (ready) {
+                        try {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(magpieManager.panelUrl())),
+                            )
+                        } catch (_: ActivityNotFoundException) {
+                            Toast.makeText(context, R.string.provider_i18n_no_browser, Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(context, R.string.magpie_not_running, Toast.LENGTH_SHORT).show()
+                    }
+                } finally {
+                    magpieBusy = false
+                }
             }
-        } else {
-            Toast.makeText(context, R.string.magpie_not_running, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -390,13 +409,13 @@ fun AgentAppRoot(
             magpieInstalled = magpieInstalled,
             magpieRunning = magpieRunning,
             onOpenMagpie = {
-                magpiePendingAction = if (magpieFirstRunConfirmed) {
-                    MagpiePendingAction.Open
-                } else {
-                    MagpiePendingAction.ConfirmFirstRun
+                if (magpieFirstRunConfirmed) {
+                    openMagpieGateway()
+                } else if (!magpieBusy) {
+                    magpiePendingAction = MagpiePendingAction.ConfirmFirstRun
                 }
             },
-            onCloseMagpie = { magpiePendingAction = MagpiePendingAction.ConfirmStop },
+            onCloseMagpie = { if (!magpieBusy) magpiePendingAction = MagpiePendingAction.ConfirmStop },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
             onConversationTogglePin = { conversation ->
                 agentState.toggleConversationPin(conversation.id)
@@ -1064,15 +1083,19 @@ fun AgentAppRoot(
             onConfirm = {
                 val stopping = magpieConfirmStop
                 magpiePendingAction = null
-                uiScope.launch {
-                    if (stopping) {
+                if (stopping) {
+                    uiScope.launch {
                         magpieManager.stop()
-                        magpieRunning = false
-                    } else {
+                        // 以实际状态为准：端口可能仍被别的实例占用。
+                        magpieRunning = magpieManager.running() || magpieManager.reachable()
+                    }
+                } else {
+                    // 首次放行：记下授权，然后直接启动，不再走状态位触发。
+                    uiScope.launch {
                         SettingsDataStore.setMagpieFirstRunConfirmed(true)
                         magpieFirstRunConfirmed = true
-                        magpiePendingAction = MagpiePendingAction.Open
                     }
+                    openMagpieGateway()
                 }
             },
         )
@@ -1155,12 +1178,11 @@ private val CorePermissionAttentionIds = setOf(
 )
 
 /**
- * Magpie 网关待执行动作。确认类动作先停在弹框上，用户放行后才转入执行。
+ * Magpie 网关的待确认动作。确认后直接调用 openMagpieGateway，不再经过状态位。
  */
 private enum class MagpiePendingAction {
     ConfirmFirstRun,
     ConfirmStop,
-    Open,
 }
 
 private data class MessageMutationTarget(

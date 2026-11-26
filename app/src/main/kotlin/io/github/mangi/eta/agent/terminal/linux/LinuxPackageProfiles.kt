@@ -50,6 +50,9 @@ internal data class LinuxPackageProfile(
 }
 
 internal object LinuxPackageProfiles {
+    /** chroot 与 PRoot 均以 HOME=/root 进入 rootfs，Magpie 的配置目录统一落在 /root 下。 */
+    private const val MAGPIE_CONFIG_SCRIPT = "mkdir -p /root/.config/magpie"
+
     val PYTHON = LinuxPackageProfile(
         id = "python",
         markerName = AlpineEnvironmentPaths.PYTHON_TOOLS_MARKER,
@@ -119,9 +122,6 @@ internal object LinuxPackageProfiles {
         ),
     )
     val ALL = listOf(PYTHON, NODE, SSH, MAGPIE)
-
-    /** chroot 与 PRoot 均以 HOME=/root 进入 rootfs，配置目录统一落在 /root 下。 */
-    private const val MAGPIE_CONFIG_SCRIPT = "mkdir -p /root/.config/magpie"
 }
 
 internal fun linuxPackageProfileReady(rootfs: File, profile: LinuxPackageProfile): Boolean {
