@@ -9,6 +9,7 @@ import io.github.mangi.eta.agent.terminal.LinuxExecutionBackend
 import io.github.mangi.eta.agent.terminal.TerminalEnvironment
 import io.github.mangi.eta.agent.terminal.TerminalRuntime
 import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -19,7 +20,7 @@ import kotlinx.coroutines.withContext
 /**
  * 管理 Linux 环境内的 Magpie 网关进程。
  *
- * 二进制由 [PinnedLinuxToolInstaller] 安装，本类只负责启停与状态查询；
+ * 二进制由 [PinnedLinuxToolInstaller] 安装，本类只负责启停、就绪探测与面板入口；
  * Magpie 自身的模型服务商配置仍走它自己的 CLI 与配置文件，这里不做代理。
  */
 internal class MagpieGatewayManager(
@@ -65,7 +66,7 @@ internal class MagpieGatewayManager(
 
     private suspend fun answering(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
-            Socket().use { it.connect(InetSocketAddress(GATEWAY_HOST, GATEWAY_PORT), PROBE_TIMEOUT_MS) }
+            Socket().use { it.connect(InetSocketAddress(GATEWAY_HOST, PANEL_PORT), PROBE_TIMEOUT_MS) }
             true
         }.getOrDefault(false)
     }
@@ -79,6 +80,18 @@ internal class MagpieGatewayManager(
         return answering()
     }
 
+    /** 面板访问密钥：magpie 用 MAGPIE_WEB_KEY 固定它，浏览器用 ?k= 直接进入。 */
+    private suspend fun panelKey(): String {
+        val stored = SettingsDataStore.magpiePanelKey()
+        if (stored != null) return stored
+        val generated = java.util.UUID.randomUUID().toString().replace("-", "")
+        SettingsDataStore.setMagpiePanelKey(generated)
+        return generated
+    }
+
+    /** 交给系统浏览器打开的面板地址，携带已固定的访问密钥。 */
+    suspend fun panelUrl(): String = "$PANEL_URL/?k=${panelKey()}"
+
     /** 启动网关；已在运行时直接返回可用状态。就绪等待失败会回收残留任务。 */
     suspend fun start(): Boolean {
         if (installed().not()) return false
@@ -87,9 +100,12 @@ internal class MagpieGatewayManager(
         val executable = magpiePath() ?: return false
         val environment = environment()
         val identity = TerminalRuntime.defaultIdentity(environment, rootfs().absolutePath)
+        // MAGPIE_WEB_KEY 固定面板密钥，省去浏览器端手工粘贴。
+        val webKey = panelKey()
         // PRoot 与 chroot 都以 HOME=/root 进入 rootfs，见 ProotCommandBuilder 的 env 前缀。
         val result = supervisor.start(
-            command = "HOME=/root XDG_CONFIG_HOME=/root/.config exec $executable serve",
+            command = "HOME=/root XDG_CONFIG_HOME=/root/.config MAGPIE_WEB_KEY=$webKey " +
+                "exec $executable serve --web=$PANEL_ADDR",
             cwd = "/root",
             identity = identity,
             environment = environment,
@@ -118,12 +134,18 @@ internal class MagpieGatewayManager(
 
     companion object {
         private const val GATEWAY_HOST = "127.0.0.1"
-        private const val GATEWAY_PORT = 3425
+
+        /**
+         * Web 面板端口。`serve --web` 用同一进程在 3430 提供面板，网关 API 仍在默认的 3425，
+         * 因此就绪探测看 3430，内置 Provider 的 baseUrl 看 3425。
+         */
+        private const val PANEL_PORT = 3430
+        private const val PANEL_ADDR = "$GATEWAY_HOST:$PANEL_PORT"
         private const val TASK_DESCRIPTION = "magpie-gateway"
         private const val PROBE_TIMEOUT_MS = 800
         private const val START_TIMEOUT_MS = 20_000L
 
-        /** 交给系统浏览器打开的面板地址。 */
-        const val GATEWAY_URL = "http://$GATEWAY_HOST:$GATEWAY_PORT"
+        /** 面板根地址，不含访问密钥；对外入口是 [panelUrl]。 */
+        private const val PANEL_URL = "http://$GATEWAY_HOST:$PANEL_PORT"
     }
 }

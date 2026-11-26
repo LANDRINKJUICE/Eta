@@ -78,7 +78,7 @@ internal class PinnedLinuxToolInstaller(
     private suspend fun activateRootless(tool: ManagedLinuxTool, artifact: VerifiedArtifact, archive: File, rootfs: File): Boolean {
         val name = tool.name.lowercase()
         if (tool == ManagedLinuxTool.MAGPIE) {
-            return activateRootlessMagpie(artifact, archive, rootfs)
+            return activateRootlessMagpie(archive, rootfs)
         }
         val versions = File(rootfs, "opt/eta/$name")
         val target = File(versions, artifact.version)
@@ -111,12 +111,13 @@ internal class PinnedLinuxToolInstaller(
      * Magpie 是单文件静态二进制，不打包也不解压：免 Root 路径直接放到 rootfs 的
      * `opt/eta/magpie`，再在 `usr/local/bin` 建同名可执行入口。
      */
-    private fun activateRootlessMagpie(artifact: VerifiedArtifact, archive: File, rootfs: File): Boolean {
+    private fun activateRootlessMagpie(archive: File, rootfs: File): Boolean {
         val target = File(rootfs, "opt/eta/magpie")
         val staging = File(rootfs, "opt/eta/magpie.installing")
         try {
             target.parentFile?.mkdirs()
             staging.delete()
+            // archive 在 cache、staging 在 rootfs，可能跨分区，因此复制而不是移动。
             archive.copyTo(staging, overwrite = true)
             require(staging.setExecutable(true, false))
             if (target.exists() && !target.delete()) return false
@@ -226,7 +227,7 @@ internal class PinnedLinuxToolInstaller(
 internal object PinnedLinuxToolArtifacts {
     private const val UV_VERSION = "0.12.7"
     private const val NODE_VERSION = "26.8.1"
-    private const val MAGPIE_VERSION = "v0.1.4827"
+    private const val MAGPIE_VERSION = "v0.1.4834"
     private const val MAGPIE_RELEASE_BASE_URL = "https://github.com/yetone/magpie-releases/releases/download"
     private const val GITHUB_PROXY_PREFIX = "https://gh-proxy.com/"
 
@@ -298,8 +299,8 @@ internal object PinnedLinuxToolArtifacts {
         when (abi) {
             "arm64-v8a" -> magpieArtifact(
                 architecture = "arm64",
-                sha256 = "22c3e584599b0d7be08af472f1d8fcbbfa43b552285040cafef22a9e37c7d41f",
-                sizeBytes = 96_141_474L,
+                sha256 = "316e26b38798f45b458e871912b7820357a942e3553890ffa9bca082c011f0cb",
+                sizeBytes = 96_207_010L,
             )
             else -> null
         }

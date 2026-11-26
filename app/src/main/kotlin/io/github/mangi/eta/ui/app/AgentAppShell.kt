@@ -453,14 +453,6 @@ private fun TopBarOverflowMenu(
                         onOpenTerminal()
                     },
                 )
-                GlassPopupItem(
-                    text = openBrowserText,
-                    icon = MiuixIcons.Glass.GlobalVpn,
-                    onClick = {
-                        showMenu = false
-                        onOpenBrowser()
-                    },
-                )
                 if (magpieInstalled) {
                     GlassPopupItem(
                         text = openMagpieText,
@@ -481,6 +473,14 @@ private fun TopBarOverflowMenu(
                         },
                     )
                 }
+                GlassPopupItem(
+                    text = openBrowserText,
+                    icon = MiuixIcons.Glass.GlobalVpn,
+                    onClick = {
+                        showMenu = false
+                        onOpenBrowser()
+                    },
+                )
                 if (hasSpeechPlayback) {
                     GlassPopupItem(
                         text = autoReadText,

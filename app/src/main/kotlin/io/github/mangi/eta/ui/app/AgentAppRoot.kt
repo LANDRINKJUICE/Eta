@@ -246,7 +246,7 @@ fun AgentAppRoot(
         RuntimeConfigRepository.ensureDefaults(EtaApp.serviceInstance)
     }
 
-    // Magpie 网关：状态只在动作完成后与首帧刷新，避免组合期做文件系统探测。
+    // Magpie 网关：首帧异步探测一次，之后由各动作直接更新状态，组合期不做文件系统访问。
     val magpieAppContext = context.applicationContext
     val magpieManager = remember(magpieAppContext) {
         MagpieGatewayManager(
@@ -355,7 +355,7 @@ fun AgentAppRoot(
         magpieRunning = ready
         if (ready) {
             try {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(MagpieGatewayManager.GATEWAY_URL)))
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(magpieManager.panelUrl())))
             } catch (_: ActivityNotFoundException) {
                 Toast.makeText(context, R.string.provider_i18n_no_browser, Toast.LENGTH_SHORT).show()
             }

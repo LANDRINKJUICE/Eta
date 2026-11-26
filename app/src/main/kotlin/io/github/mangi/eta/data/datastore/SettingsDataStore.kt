@@ -164,6 +164,7 @@ internal object SettingsDataStore {
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val MAGPIE_FIRST_RUN_CONFIRMED = booleanPreferencesKey("magpie_first_run_confirmed")
+    private val MAGPIE_PANEL_KEY = stringPreferencesKey("magpie_panel_key")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
     private val APPEARANCE_MONET_ENABLED = booleanPreferencesKey("appearance_monet_enabled")
     private val APPEARANCE_PALETTE_STYLE = stringPreferencesKey("appearance_palette_style")
@@ -279,14 +280,25 @@ internal object SettingsDataStore {
         }
     }
 
-    /** Magpie 网关是否已完成首次运行授权；卸载 Magpie 时应清除。 */
-    fun magpieFirstRunConfirmed(): Boolean {
+    /** Magpie 面板访问密钥；首次生成后固定，供 MAGPIE_WEB_KEY 与 ?k= 复用。 */
+    suspend fun magpiePanelKey(): String? {
         ensureInitialized()
-        return kotlinx.coroutines.runBlocking {
-            dataStore.data.catch { cause ->
-                if (cause is IOException) emit(emptyPreferences()) else throw cause
-            }.map { it[MAGPIE_FIRST_RUN_CONFIRMED] ?: false }.first()
-        }
+        return dataStore.data.catch { cause ->
+            if (cause is IOException) emit(emptyPreferences()) else throw cause
+        }.map { it[MAGPIE_PANEL_KEY] }.first()
+    }
+
+    suspend fun setMagpiePanelKey(key: String) {
+        ensureInitialized()
+        dataStore.edit { preferences -> preferences[MAGPIE_PANEL_KEY] = key }
+    }
+
+    /** Magpie 网关是否已完成首次运行授权；卸载 Magpie 时应清除。 */
+    suspend fun magpieFirstRunConfirmed(): Boolean {
+        ensureInitialized()
+        return dataStore.data.catch { cause ->
+            if (cause is IOException) emit(emptyPreferences()) else throw cause
+        }.map { it[MAGPIE_FIRST_RUN_CONFIRMED] ?: false }.first()
     }
 
     suspend fun setMagpieFirstRunConfirmed(confirmed: Boolean) {
