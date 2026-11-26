@@ -247,10 +247,11 @@ fun AgentAppRoot(
     }
 
     // Magpie 网关：状态只在动作完成后与首帧刷新，避免组合期做文件系统探测。
-    val magpieManager = remember(appContext) {
+    val magpieAppContext = context.applicationContext
+    val magpieManager = remember(magpieAppContext) {
         MagpieGatewayManager(
-            appContext,
-            LinuxEnvironmentSettingsRepository.current(appContext),
+            magpieAppContext,
+            LinuxEnvironmentSettingsRepository.current(magpieAppContext),
         )
     }
     // 菜单项以 magpieInstalled 为准：它由下面的探测填充，未就绪时天然不显示。
