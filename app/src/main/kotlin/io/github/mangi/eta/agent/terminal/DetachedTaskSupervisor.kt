@@ -41,6 +41,9 @@ internal class DetachedTaskSupervisor(
         const val MAX_RETAINED_RECORDS = 32
         const val MAX_LOG_READ_BYTES = 64 * 1024
 
+        \/** 停止时 SIGTERM 后留给进程优雅退出的默认宽限；调用方可按其退出链路加长。 *\/
+        const val DEFAULT_STOP_GRACE_MS = 1_000L
+
         // 进程内允许 AI 侧与 UI 侧各持一个实例；记录文件的读-改-写必须经同一把锁串行。
         private val RECORDS_LOCK = Any()
         private val COMMAND_PROCESSES = java.util.concurrent.ConcurrentHashMap<String, CommandProcess>()
@@ -305,13 +308,17 @@ internal class DetachedTaskSupervisor(
             "mv ${shellQuote("$exitPath.tmp")} ${shellQuote(exitPath)}; exit \"${'$'}eta_status\"; }"
     }
 
-    /** 停止并删除记录与日志；进程已退出时等价于清理记录。 */
-    fun stop(id: String): Boolean {
+    /**
+     * 停止并删除记录与日志；进程已退出时等价于清理记录。
+     * gracefulWaitMs 是 SIGTERM 后留给进程优雅退出的宽限，默认保持原有行为；
+     * 拉起了一整棵子进程树的进程（如网关）可调大，让它有机会先自行回收子进程。
+     */
+    fun stop(id: String, gracefulWaitMs: Long = DEFAULT_STOP_GRACE_MS): Boolean {
         val tasks = synchronized(RECORDS_LOCK) { loadTasksLocked() }
         val task = tasks.firstOrNull { it.id == id } ?: return false
         if (task.commandTask && task.completedAt == null) return stopCommand(id)
         if (task.identity == "root" && !rootAvailable()) return false
-        if (!stopTaskProcess(task)) return false
+        if (!stopTaskProcess(task, gracefulWaitMs = gracefulWaitMs)) return false
         synchronized(RECORDS_LOCK) {
             saveTasksLocked(loadTasksLocked().filterNot { it.id == id })
         }
@@ -323,11 +330,17 @@ internal class DetachedTaskSupervisor(
         return true
     }
 
-    private fun stopTaskProcess(task: DetachedTask, removeFiles: Boolean = true): Boolean {
+    private fun stopTaskProcess(
+        task: DetachedTask,
+        removeFiles: Boolean = true,
+        gracefulWaitMs: Long = DEFAULT_STOP_GRACE_MS,
+    ): Boolean {
         COMMAND_PROCESSES[task.id]?.let { live ->
             live.supervisor.terminateAndReap(live.process)
             if (!removeFiles) return true
         }
+        // 宽限换算成轮询次数：每 200ms 探一次存活，进程一旦优雅退出就提前结束，无需等满宽限。
+        val ticks = (gracefulWaitMs / 200).coerceAtLeast(1)
         val stopScript = buildString {
             appendLine(aliveCheckFunction())
             appendLine("if eta_alive ${task.pid} ${shellQuote(ownerProof(task))}; then")
@@ -335,7 +348,13 @@ internal class DetachedTaskSupervisor(
             if (task.isolatedGroup != null) {
                 appendLine("  kill -TERM ${if (task.isolatedGroup) "-" else ""}${task.pid} 2>/dev/null")
             } else appendLine("  if [ -d /proc ]; then kill -TERM -${task.pid} 2>/dev/null; else kill -TERM ${task.pid} 2>/dev/null; fi")
-            appendLine("  sleep 1")
+            // 优雅退出宽限：轮询存活，进程自行结束就跳出，只有仍活着才在下面补 SIGKILL。
+            appendLine("  i=0")
+            appendLine("  while [ \$i -lt $ticks ]; do")
+            appendLine("    eta_alive ${task.pid} ${shellQuote(ownerProof(task))} || break")
+            appendLine("    i=\$((i+1))")
+            appendLine("    sleep 0.2")
+            appendLine("  done")
             appendLine("  if eta_alive ${task.pid} ${shellQuote(ownerProof(task))}; then")
             if (task.isolatedGroup != null) {
                 appendLine("    kill -9 ${if (task.isolatedGroup) "-" else ""}${task.pid} 2>/dev/null")
@@ -350,7 +369,8 @@ internal class DetachedTaskSupervisor(
             processSupervisor = oneShotSupervisor,
             identity = task.identity,
             command = stopScript,
-            timeoutSeconds = 10,
+            // 超时必须覆盖整个优雅宽限，否则宽限未到就被判超时、记录误留。
+            timeoutSeconds = (gracefulWaitMs / 1_000 + 9).coerceAtLeast(10),
         )
         return result.exitCode == 0
     }

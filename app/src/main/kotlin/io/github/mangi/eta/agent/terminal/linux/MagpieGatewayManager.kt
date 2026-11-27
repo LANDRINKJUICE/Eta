@@ -8,6 +8,7 @@ import io.github.mangi.eta.agent.terminal.LinuxDistribution
 import io.github.mangi.eta.agent.terminal.LinuxExecutionBackend
 import io.github.mangi.eta.agent.terminal.TerminalEnvironment
 import io.github.mangi.eta.agent.terminal.TerminalRuntime
+import io.github.mangi.eta.agent.terminal.shellQuote
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import java.io.File
@@ -141,7 +142,7 @@ internal class MagpieGatewayManager(
     /** 停止网关；没有运行中的任务也视为成功。 */
     suspend fun stop(): Boolean = withContext(Dispatchers.IO) {
         val task = gatewayTask() ?: return@withContext true
-        val stopped = supervisor.stop(task.id)
+        val stopped = supervisor.stop(task.id, gracefulWaitMs = STOP_GRACE_MS)
         AndroidAgentLogger.info(
             "Magpie action=stop outcome=${if (stopped) "succeeded" else "failed"} id=${task.id}",
         )
@@ -154,19 +155,26 @@ internal class MagpieGatewayManager(
      */
     suspend fun uninstall(): Boolean = withContext(Dispatchers.IO) {
         stop()
-        val rootfs = File(rootfsPath())
-        val targets = listOf(
-            File(rootfs, "usr/local/bin/magpie"),
-            File(rootfs, "opt/eta/magpie"),
-            File(rootfs, LinuxPackageProfiles.MAGPIE.markerName),
+        // 二进制与 marker 都在 rootfs 内、属主是 root，App 进程的 File.delete() 删不动。
+        // 与安装时写 marker 同一套路径：在 Linux 环境内以默认身份执行，rm -f 对不存在的文件也返回成功。
+        val paths = listOf(
+            "/usr/local/bin/magpie",
+            "/opt/eta/magpie",
+            "/${LinuxPackageProfiles.MAGPIE.markerName}",
         )
-        // 逐个删除，不短路：某个文件删不掉时其余仍需清理，避免留下半个安装。
-        val failures = targets.count { file -> file.exists() && !file.delete() }
+        val command = "rm -f " + paths.joinToString(" ") { shellQuote(it) }
+        val result = InstallerShellRunner.run(
+            command = command,
+            timeoutSeconds = UNINSTALL_TIMEOUT_SECONDS,
+            environment = environment(),
+            linuxRootfsPath = rootfsPath(),
+        )
         SettingsDataStore.setMagpieFirstRunConfirmed(false)
         AndroidAgentLogger.info(
-            "Magpie action=uninstall outcome=${if (failures == 0) "succeeded" else "failed"} failures=$failures",
+            "Magpie action=uninstall outcome=${if (result.exitCode == 0) "succeeded" else "failed"} " +
+                "exitCode=${result.exitCode} outputChars=${result.output.length}",
         )
-        failures == 0
+        result.exitCode == 0
     }
 
     companion object {
@@ -178,6 +186,13 @@ internal class MagpieGatewayManager(
         private const val TASK_DESCRIPTION = "magpie-gateway"
         private const val PROBE_TIMEOUT_MS = 800
         private const val START_TIMEOUT_MS = 20_000L
+        \/**
+         * 停止时留给 magpie 优雅退出的宽限。它收到 SIGTERM 后要排空网关(默认 7s)、
+         * 保存会话(≤5s)、再让插件宿主自行结束(≤20s)，期间会连带清理 bun 子进程树；
+         * 宽限不足就会在主进程完成回收前 SIGKILL，留下孤儿 bun。取 40s 覆盖最坏路径。
+         *\/
+        private const val STOP_GRACE_MS = 40_000L
+        private const val UNINSTALL_TIMEOUT_SECONDS = 30L
 
         /** 面板根地址，不含访问密钥；对外入口是 [panelUrl]。 */
         private const val PANEL_URL = "http://$GATEWAY_HOST:$PANEL_PORT"
