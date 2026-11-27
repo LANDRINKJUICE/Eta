@@ -41,7 +41,7 @@ internal class DetachedTaskSupervisor(
         const val MAX_RETAINED_RECORDS = 32
         const val MAX_LOG_READ_BYTES = 64 * 1024
 
-        \/** 停止时 SIGTERM 后留给进程优雅退出的默认宽限；调用方可按其退出链路加长。 *\/
+        /** 停止时 SIGTERM 后留给进程优雅退出的默认宽限；调用方可按其退出链路加长。 */
         const val DEFAULT_STOP_GRACE_MS = 1_000L
 
         // 进程内允许 AI 侧与 UI 侧各持一个实例；记录文件的读-改-写必须经同一把锁串行。

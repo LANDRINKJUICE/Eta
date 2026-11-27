@@ -186,11 +186,11 @@ internal class MagpieGatewayManager(
         private const val TASK_DESCRIPTION = "magpie-gateway"
         private const val PROBE_TIMEOUT_MS = 800
         private const val START_TIMEOUT_MS = 20_000L
-        \/**
+        /**
          * 停止时留给 magpie 优雅退出的宽限。它收到 SIGTERM 后要排空网关(默认 7s)、
          * 保存会话(≤5s)、再让插件宿主自行结束(≤20s)，期间会连带清理 bun 子进程树；
          * 宽限不足就会在主进程完成回收前 SIGKILL，留下孤儿 bun。取 40s 覆盖最坏路径。
-         *\/
+         */
         private const val STOP_GRACE_MS = 40_000L
         private const val UNINSTALL_TIMEOUT_SECONDS = 30L
 
